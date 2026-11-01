@@ -1,3 +1,7 @@
+## Pi Durable
+
+Features should fit Pi Durable's documented patterns or extend them through its supported points. If a design pushes against the framework, stop and tell the user before working around it, even if the idea came from the user.
+
 ## Agent skills
 
 ### Issue tracker
