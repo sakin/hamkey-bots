@@ -36,6 +36,7 @@ export async function startHamkey(options: { devIdentity?: string; webDir?: stri
 	const server = createApp({
 		members: [ann, ben],
 		engine,
+		bots,
 		threads: new Threads(dataDir, engine, bots),
 		devIdentity: options.devIdentity,
 		webDir: options.webDir,
@@ -44,7 +45,7 @@ export async function startHamkey(options: { devIdentity?: string; webDir?: stri
 	const base = `http://127.0.0.1:${port}`;
 
 	/** A client acting as whoever the headers say. */
-	function as(headers: Record<string, string>) {
+	function as(headers: Record<string, string>, memberId = "") {
 		const request = (path: string, init: RequestInit = {}) =>
 			fetch(base + path, { ...init, headers: { ...headers, "content-type": "application/json", ...init.headers } });
 
@@ -75,7 +76,7 @@ export async function startHamkey(options: { devIdentity?: string; webDir?: stri
 			throw new Error(`Stream ended before the expected view. Saw: ${JSON.stringify(views.at(-1))}`);
 		}
 
-		const primaryId = `primary-${headers["x-hamkey-dev-member"] ?? (headers["tailscale-user-login"] ?? "").split("@")[0]}`;
+		const primaryId = `primary-${memberId}`;
 
 		return {
 			request,
@@ -104,8 +105,8 @@ export async function startHamkey(options: { devIdentity?: string; webDir?: stri
 		port,
 		as,
 		asTailscale: (login: string) => as({ [TAILSCALE_LOGIN_HEADER]: login }),
-		ann: as({ [TAILSCALE_LOGIN_HEADER]: ann.tailscaleLogin }),
-		ben: as({ [TAILSCALE_LOGIN_HEADER]: ben.tailscaleLogin }),
+		ann: as({ [TAILSCALE_LOGIN_HEADER]: ann.tailscaleLogin }, ann.id),
+		ben: as({ [TAILSCALE_LOGIN_HEADER]: ben.tailscaleLogin }, ben.id),
 		async stop() {
 			server.closeAllConnections();
 			await new Promise((r) => server.close(r));

@@ -117,6 +117,14 @@ describe("thread isolation (ADR 0005)", () => {
 		expect(JSON.stringify(ann)).not.toContain("bikes");
 	});
 
+	it("never carries one Member's common Bot stream to the other", async () => {
+		hamkey = await startHamkey();
+		const bens = hamkey.ben.stream((v) => v.messages.length > 0, 1500, "research");
+		await bens.ready;
+		await say(hamkey.ann, "research", "Ann only", "Reply");
+		await expect(bens).rejects.toThrow();
+	});
+
 	it("gives a household Bot one thread that both Members share", async () => {
 		hamkey = await startHamkey();
 		await say(hamkey.ann, "meal-planner", "Plan Monday", "Soup");

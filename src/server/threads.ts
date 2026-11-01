@@ -2,7 +2,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ChatEngine, ThreadId } from "./chat/engine.ts";
 import type { Member } from "./members.ts";
-import { Bots, type Bot } from "./bots.ts";
+import type { Bot, Bots } from "./bots.ts";
 
 /**
  * Maps each Member and Bot to a main thread. Thread access lives here so every read and write passes through one
@@ -27,11 +27,6 @@ export class Threads {
 		this.#engine = engine;
 	}
 
-	/** The Member's Bots. */
-	botsFor(member: Member): Bot[] {
-		return this.#bots.listFor(member);
-	}
-
 	/** The Bot and the main thread this Member may use with it (created on first use), or undefined if they may not. */
 	async mainThread(member: Member, botId: string): Promise<{ bot: Bot; thread: ThreadId } | undefined> {
 		const bot = this.#bots.find(member, botId);
@@ -53,6 +48,7 @@ export class Threads {
 		const index = await this.#load();
 		const existing = index[key];
 		if (existing !== undefined) return existing;
+		// The thread takes the Bot's instructions as they are now; editing the Bot file later does not change existing threads.
 		const id = await this.#engine.createThread({ instructions: bot.instructions });
 		index[key] = id;
 		try {
@@ -79,7 +75,16 @@ export class Threads {
 	#load(): Promise<Record<string, ThreadId>> {
 		this.#loading ??= (async () => {
 			try {
-				return JSON.parse(await readFile(this.#file, "utf8")) as Record<string, ThreadId>;
+				const index = JSON.parse(await readFile(this.#file, "utf8")) as Record<string, ThreadId>;
+				// Before Bots existed, a Primary Bot's thread was keyed `primary:<member>`. Keep those conversations.
+				for (const key of Object.keys(index)) {
+					const member = key.startsWith("primary:") ? key.slice("primary:".length) : undefined;
+					if (member !== undefined && index[`primary-${member}:${member}`] === undefined) {
+						index[`primary-${member}:${member}`] = index[key]!;
+						delete index[key];
+					}
+				}
+				return index;
 			} catch (error) {
 				if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
 				return {};

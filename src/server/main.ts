@@ -27,6 +27,7 @@ const engine = await openOpenRouterEngine({
 const server = createApp({
 	members,
 	engine,
+	bots,
 	threads: new Threads(config.dataDir, engine, bots),
 	devIdentity: config.devIdentity,
 	webDir: config.webDir,

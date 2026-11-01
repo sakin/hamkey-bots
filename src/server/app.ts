@@ -5,6 +5,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { streamSSE } from "hono/streaming";
+import type { Bots } from "./bots.ts";
 import type { ChatEngine } from "./chat/engine.ts";
 import { resolveMember } from "./identity.ts";
 import type { Member } from "./members.ts";
@@ -13,6 +14,7 @@ import { Threads } from "./threads.ts";
 export type AppOptions = {
 	members: readonly Member[];
 	engine: ChatEngine;
+	bots: Bots;
 	threads: Threads;
 	devIdentity?: string;
 	webDir?: string;
@@ -25,7 +27,7 @@ const KEEP_ALIVE_MS = 25_000;
 
 /** Builds the HTTP server. It does not listen; `listenLocal` does, and only on the loopback interface. */
 export function createApp(options: AppOptions): Server {
-	const { engine, threads } = options;
+	const { engine, threads, bots } = options;
 
 	const api = new Hono<Env>();
 
@@ -43,7 +45,7 @@ export function createApp(options: AppOptions): Server {
 	});
 
 	api.get("/bots", (c) =>
-		c.json({ bots: threads.botsFor(c.get("member")).map(({ id, name, kind }) => ({ id, name, kind })) }),
+		c.json({ bots: bots.listFor(c.get("member")).map(({ id, name, kind }) => ({ id, name, kind })) }),
 	);
 
 	// A Bot the Member may not use answers exactly like one that does not exist.

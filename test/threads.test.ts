@@ -1,4 +1,4 @@
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -47,5 +47,14 @@ describe("thread index", () => {
 		const restarted = new Threads(dir, engineWith(async () => "should-not-be-called"), bots);
 		expect(await primary(restarted, ann)).toBe(a);
 		expect(await primary(restarted, ben)).toBe(b);
+	});
+});
+
+describe("thread index migration", () => {
+	it("keeps a Primary Bot conversation saved under the old key", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "hamkey-threads-"));
+		await writeFile(join(dir, "threads.json"), JSON.stringify({ "primary:ann": "old-thread" }));
+		const threads = new Threads(dir, engineWith(async () => "new-thread"), bots);
+		expect(await primary(threads, ann)).toBe("old-thread");
 	});
 });

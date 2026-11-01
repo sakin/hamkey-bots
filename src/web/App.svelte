@@ -6,6 +6,7 @@
 	let refused = $state(false);
 	let view = $state<ThreadView>({ messages: [], busy: false });
 	let bots = $state<BotSummary[]>([]);
+	let botsFailed = $state(false);
 	let botId = $state<string | undefined>();
 	let online = $state(true);
 	let text = $state("");
@@ -18,7 +19,9 @@
 		me = await fetchMe();
 		refused = me === undefined;
 		if (refused) return;
-		bots = await fetchBots();
+		const found = await fetchBots();
+		botsFailed = found === undefined;
+		bots = found ?? [];
 		botId = bots[0]?.id;
 	}
 
@@ -31,6 +34,8 @@
 		const id = botId;
 		if (id === undefined) return;
 		view = { messages: [], busy: false };
+		online = true;
+		text = "";
 		return followThread(
 			id,
 			(v) => (view = v),
@@ -108,6 +113,9 @@
 				</button>
 			{/each}
 		</nav>
+		{#if botsFailed}
+			<p class="px-4 py-2 text-center text-sm text-red-600" role="alert">Could not load your Bots. Reload to try again.</p>
+		{/if}
 		<main bind:this={scroller} class="flex-1 space-y-3 overflow-y-auto px-4 py-4" aria-live="polite">
 			{#if view.messages.length === 0 && !view.draft}
 				<p class="pt-8 text-center text-sm text-gray-400">Say hello to start the conversation.</p>
