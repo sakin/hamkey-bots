@@ -1,6 +1,6 @@
 export type ChatMessage = { id: string; role: "user" | "assistant"; text: string };
 export type ThreadView = { messages: ChatMessage[]; draft?: string; busy: boolean; error?: string };
-export type Me = { member: { id: string; name: string } };
+export type Me = { member: { id: string; name: string }; devMembers?: string[] };
 export type BotSummary = { id: string; name: string; kind: "personal" | "household" | "common" };
 
 /** Development only: pick which Member to act as when the server runs with a development identity. */

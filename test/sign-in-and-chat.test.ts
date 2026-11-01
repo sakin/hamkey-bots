@@ -41,12 +41,14 @@ describe("identity", () => {
 		expect((await (await none.get("/api/me")).json()).member.id).toBe("ann");
 		const asBen = hamkey.as({ "x-hamkey-dev-member": "ben" });
 		expect((await (await asBen.get("/api/me")).json()).member.id).toBe("ben");
+		expect((await (await none.get("/api/me")).json()).devMembers).toEqual(["ann", "ben"]);
 		expect((await hamkey.as({ "x-hamkey-dev-member": "eve" }).get("/api/me")).status).toBe(403);
 	});
 
 	it("ignores the development header when no development identity is set", async () => {
 		hamkey = await startHamkey();
 		expect((await hamkey.as({ "x-hamkey-dev-member": "ann" }).get("/api/me")).status).toBe(403);
+		expect((await (await hamkey.ann.get("/api/me")).json()).devMembers).toBeUndefined();
 	});
 
 	it("refuses to start with a development identity in production", () => {

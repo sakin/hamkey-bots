@@ -41,7 +41,9 @@ export function createApp(options: AppOptions): Server {
 
 	api.get("/me", (c) => {
 		const member = c.get("member");
-		return c.json({ member: { id: member.id, name: member.name } });
+		// The development Member switcher needs the Member ids; they are offered only when a development identity is set.
+		const devMembers = options.devIdentity === undefined ? undefined : options.members.map((m) => m.id);
+		return c.json({ member: { id: member.id, name: member.name }, devMembers });
 	});
 
 	api.get("/bots", (c) =>

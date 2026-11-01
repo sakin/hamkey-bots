@@ -89,7 +89,7 @@
 					onchange={(e) => pickDev(e.currentTarget.value)}
 				>
 					<option value="">default</option>
-					{#each ["ann", "ben"] as id}<option value={id}>{id}</option>{/each}
+					{#each me?.devMembers ?? [] as id}<option value={id}>{id}</option>{/each}
 				</select>
 			{/if}
 		</div>
