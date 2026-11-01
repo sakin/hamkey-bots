@@ -1,0 +1,11 @@
+# Secrets
+mise.local.toml
+.env
+.env.*
+
+# Runtime data
+data/
+
+# Dependencies and build output
+node_modules/
+dist/

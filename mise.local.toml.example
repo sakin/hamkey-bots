@@ -1,0 +1,3 @@
+# Copy to mise.local.toml and fill in. Never commit the copy.
+[env]
+OPENROUTER_API_KEY = { value = "", redact = true }

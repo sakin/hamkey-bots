@@ -1,0 +1,3 @@
+# Project tools. Secrets go in mise.local.toml, which git ignores.
+[tools]
+node = "24.22.2"
