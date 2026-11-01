@@ -28,13 +28,23 @@ export async function fetchMe(): Promise<Me | undefined> {
 	return res.ok ? res.json() : undefined;
 }
 
+// A retry of a send that failed reuses its request id, so the server can tell it is the same message (and a send that
+// did arrive but whose reply was lost is not delivered twice).
+let attempt: { text: string; requestId: string } | undefined;
+
 export async function sendMessage(text: string): Promise<boolean> {
-	const res = await fetch("/api/primary/messages", {
-		method: "POST",
-		headers: { ...headers(), "content-type": "application/json" },
-		body: JSON.stringify({ text, requestId: crypto.randomUUID() }),
-	});
-	return res.ok;
+	if (attempt?.text !== text) attempt = { text, requestId: crypto.randomUUID() };
+	try {
+		const res = await fetch("/api/primary/messages", {
+			method: "POST",
+			headers: { ...headers(), "content-type": "application/json" },
+			body: JSON.stringify({ text, requestId: attempt.requestId }),
+		});
+		if (res.ok) attempt = undefined;
+		return res.ok;
+	} catch {
+		return false;
+	}
 }
 
 /**

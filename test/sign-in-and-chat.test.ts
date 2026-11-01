@@ -61,7 +61,7 @@ describe("chatting with a Primary Bot", () => {
 		hamkey = await startHamkey();
 		hamkey.faux.setResponses([fauxAssistantMessage([fauxText("Hello Ann, how can I help with the household today?")])]);
 		const live = hamkey.ann.stream((v) => v.messages.some((m) => m.role === "assistant"));
-		await new Promise((r) => setTimeout(r, 50));
+		await live.ready;
 		expect((await hamkey.ann.send("Hi there")).status).toBe(202);
 		const views = await live;
 		const last = views.at(-1)!;
@@ -78,12 +78,23 @@ describe("chatting with a Primary Bot", () => {
 		hamkey = await startHamkey();
 		hamkey.faux.setResponses([fauxAssistantMessage([fauxText("Noted.")])]);
 		const live = hamkey.ann.stream((v) => v.messages.some((m) => m.role === "assistant"));
-		await new Promise((r) => setTimeout(r, 50));
+		await live.ready;
 		await hamkey.ann.send("A secret only Ann knows");
 		await live;
 		const ben = await (await hamkey.ben.get("/api/primary")).json();
 		expect(ben.messages).toEqual([]);
 		expect(JSON.stringify(ben)).not.toContain("secret");
+	});
+
+	it("streams Ben's reply to Ben and nothing of it to Ann", async () => {
+		hamkey = await startHamkey();
+		hamkey.faux.setResponses([fauxAssistantMessage([fauxText("Hi Ben.")])]);
+		const live = hamkey.ben.stream((v) => v.messages.some((m) => m.role === "assistant"));
+		await live.ready;
+		await hamkey.ben.send("Ben's private note");
+		expect((await live).at(-1)!.messages.map((m) => m.text)).toEqual(["Ben's private note", "Hi Ben."]);
+		const ann = await (await hamkey.ann.get("/api/primary")).json();
+		expect(JSON.stringify(ann)).not.toContain("private");
 	});
 
 	it("rejects an empty message", async () => {
@@ -95,7 +106,7 @@ describe("chatting with a Primary Bot", () => {
 		hamkey = await startHamkey();
 		hamkey.faux.setResponses([fauxAssistantMessage([fauxText("Once.")])]);
 		const live = hamkey.ann.stream((v) => v.messages.some((m) => m.role === "assistant"));
-		await new Promise((r) => setTimeout(r, 50));
+		await live.ready;
 		await hamkey.ann.send("Hello", "req-1");
 		await hamkey.ann.send("Hello", "req-1");
 		const views = await live;
@@ -106,7 +117,7 @@ describe("chatting with a Primary Bot", () => {
 		hamkey = await startHamkey();
 		hamkey.faux.setResponses([]);
 		const live = hamkey.ann.stream((v) => v.error !== undefined, 15000);
-		await new Promise((r) => setTimeout(r, 50));
+		await live.ready;
 		await hamkey.ann.send("Anyone there?");
 		expect((await live).at(-1)!.error).toBeTruthy();
 	}, 20000);
@@ -153,7 +164,12 @@ describe("routing", () => {
 		});
 		await response.body!.getReader().read();
 		controller.abort();
-		await new Promise((r) => setTimeout(r, 50));
 		expect((await hamkey.ann.get("/api/primary")).status).toBe(200);
+		// A later stream still works and replies reach it.
+		hamkey.faux.setResponses([fauxAssistantMessage([fauxText("Still here.")])]);
+		const live = hamkey.ann.stream((v) => v.messages.some((m) => m.role === "assistant"));
+		await live.ready;
+		await hamkey.ann.send("Hello again");
+		await live;
 	});
 });

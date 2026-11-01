@@ -1,9 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { createModels } from "@earendil-works/pi-ai";
-import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import { createApp, listenLocal } from "./app.ts";
-import { openPiEngine } from "./chat/pi-engine.ts";
+import { openOpenRouterEngine } from "./chat/openrouter.ts";
 import { loadConfig } from "./config.ts";
 import { loadMembers } from "./members.ts";
 import { Threads } from "./threads.ts";
@@ -14,11 +12,15 @@ if (!process.env.OPENROUTER_API_KEY) console.warn("OPENROUTER_API_KEY is not set
 await mkdir(config.dataDir, { recursive: true });
 const members = await loadMembers(config.dataDir);
 
-// The key is read from the server's environment by the provider. No tool is installed, so no Bot can reach it.
-const models = createModels();
-models.setProvider(openrouterProvider());
-
-const engine = await openPiEngine({ storagePath: join(config.dataDir, "hamkey.sqlite"), models, model: config.model });
+const engine = await openOpenRouterEngine({
+	storagePath: join(config.dataDir, "hamkey.sqlite"),
+	modelId: config.model.modelId,
+	onFailure: (error) => {
+		// The conversation store failed and the runtime closed itself. Exit so a supervisor restarts a healthy process.
+		console.error("Conversation store failed; exiting.", error);
+		process.exit(1);
+	},
+});
 const server = createApp({
 	members,
 	engine,

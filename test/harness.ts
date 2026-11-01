@@ -43,35 +43,49 @@ export async function startHamkey(options: { devIdentity?: string; webDir?: stri
 	function as(headers: Record<string, string>) {
 		const request = (path: string, init: RequestInit = {}) =>
 			fetch(base + path, { ...init, headers: { ...headers, "content-type": "application/json", ...init.headers } });
+
+		async function read(until: (view: ThreadView) => boolean, timeoutMs: number, opened: () => void) {
+			const controller = new AbortController();
+			const response = await request("/api/primary/events", { signal: controller.signal });
+			const views: ThreadView[] = [];
+			const timer = setTimeout(() => controller.abort(), timeoutMs);
+			try {
+				const decoder = new TextDecoder();
+				let buffer = "";
+				for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
+					buffer += decoder.decode(chunk, { stream: true });
+					let end: number;
+					while ((end = buffer.indexOf("\n\n")) !== -1) {
+						const frame = buffer.slice(0, end);
+						buffer = buffer.slice(end + 2);
+						if (!frame.startsWith("data: ")) continue;
+						views.push(JSON.parse(frame.slice(6)));
+						opened();
+						if (until(views.at(-1)!)) return views;
+					}
+				}
+			} finally {
+				clearTimeout(timer);
+				controller.abort();
+			}
+			throw new Error(`Stream ended before the expected view. Saw: ${JSON.stringify(views.at(-1))}`);
+		}
+
 		return {
+			request,
 			get: (path: string) => request(path),
 			send: (text: string, requestId?: string) =>
 				request("/api/primary/messages", { method: "POST", body: JSON.stringify({ text, requestId }) }),
-			/** Opens the live stream; `until` resolves with every view received once the predicate holds. */
-			async stream(until: (view: ThreadView) => boolean, timeoutMs = 5000): Promise<ThreadView[]> {
-				const controller = new AbortController();
-				const response = await request("/api/primary/events", { signal: controller.signal });
-				const views: ThreadView[] = [];
-				const timer = setTimeout(() => controller.abort(), timeoutMs);
-				try {
-					const decoder = new TextDecoder();
-					let buffer = "";
-					for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
-						buffer += decoder.decode(chunk, { stream: true });
-						let end: number;
-						while ((end = buffer.indexOf("\n\n")) !== -1) {
-							const frame = buffer.slice(0, end);
-							buffer = buffer.slice(end + 2);
-							if (!frame.startsWith("data: ")) continue;
-							views.push(JSON.parse(frame.slice(6)));
-							if (until(views.at(-1)!)) return views;
-						}
-					}
-				} finally {
-					clearTimeout(timer);
-					controller.abort();
-				}
-				throw new Error(`Stream ended before the expected view. Saw: ${JSON.stringify(views.at(-1))}`);
+			/**
+			 * Opens the live stream; the promise resolves with every view received once `until` holds. `ready` resolves
+			 * when the first view has arrived, so a test can act without guessing how long the connection takes.
+			 */
+			stream(until: (view: ThreadView) => boolean, timeoutMs = 5000) {
+				let opened!: () => void;
+				const ready = new Promise<void>((r) => (opened = r));
+				const done = read(until, timeoutMs, opened);
+				done.catch(() => opened());
+				return Object.assign(done, { ready });
 			},
 		};
 	}

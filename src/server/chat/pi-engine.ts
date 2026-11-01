@@ -9,6 +9,8 @@ export type PiEngineOptions = {
 	storagePath: string;
 	models: Models;
 	model: { provider: string; modelId: string };
+	/** Called once if the store fails and the runtime shuts itself down; the process should exit so it is restarted. */
+	onFailure?: (error: unknown) => void;
 };
 
 type Block = { type: string; text?: string };
@@ -53,6 +55,9 @@ export async function openPiEngine(options: PiEngineOptions): Promise<ChatEngine
 		context,
 	);
 	harness.resume();
+	void harness.closed.then((end) => {
+		if (end.reason === "failed") options.onFailure?.(end.error);
+	});
 
 	const errors = new Map<ThreadId, string>();
 	const listeners = new Map<ThreadId, Set<() => void>>();
