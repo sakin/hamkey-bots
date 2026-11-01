@@ -9,3 +9,6 @@ data/
 # Dependencies and build output
 node_modules/
 dist/
+
+# Orca worktrees
+.orca/

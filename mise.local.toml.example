@@ -9,3 +9,5 @@ HAMKEY_DEV_IDENTITY = "ann"
 #   [{"id":"ann","name":"Ann","tailscaleLogin":"ann@example.com"},{"id":"ben","name":"Ben","tailscaleLogin":"ben@example.com"}]
 # HAMKEY_DATA_DIR = "data"
 # HAMKEY_MODEL = "deepseek/deepseek-v4.1-flash"
+
+# Ports for parallel worktrees are generated into .env.local by bin/worktree-setup (PORT, HAMKEY_WEB_PORT).
