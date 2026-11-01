@@ -48,7 +48,8 @@ describe("identity", () => {
 	});
 
 	it("refuses to start with a development identity in production", () => {
-		expect(() => loadConfig({ NODE_ENV: "production", HAMKEY_DEV_IDENTITY: "ann" })).toThrow(/production/);
+		expect(() => loadConfig({ NODE_ENV: "production", HAMKEY_DEV_IDENTITY: "ann" })).toThrow(/development/);
+		expect(() => loadConfig({ HAMKEY_DEV_IDENTITY: "ann" })).toThrow(/development/);
 		expect(loadConfig({ NODE_ENV: "development", HAMKEY_DEV_IDENTITY: "ann" }).devIdentity).toBe("ann");
 	});
 });

@@ -17,8 +17,11 @@ export const DEFAULT_MODEL = "anthropic/claude-sonnet-5.5";
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 	const production = env.NODE_ENV === "production";
 	const devIdentity = env.HAMKEY_DEV_IDENTITY || undefined;
-	if (production && devIdentity !== undefined) {
-		throw new Error("HAMKEY_DEV_IDENTITY must not be set in production: it would let anyone act as a Member.");
+	// Fail safe: the development identity is accepted only when development is stated, never by default.
+	if (devIdentity !== undefined && env.NODE_ENV !== "development") {
+		throw new Error(
+			"HAMKEY_DEV_IDENTITY is only allowed with NODE_ENV=development: it would let anyone act as a Member.",
+		);
 	}
 	return {
 		port: Number(env.PORT ?? 3000),

@@ -3,7 +3,7 @@
 OPENROUTER_API_KEY = { value = "", redact = true }
 
 # Local development: act as either Member (set HAMKEY_DEV_IDENTITY to a Member id from members.json).
-# The server refuses to start with this set when NODE_ENV=production.
+# The server refuses to start with this set unless NODE_ENV=development (npm run dev:server sets it).
 HAMKEY_DEV_IDENTITY = "ann"
 # Optional: where application data lives (default ./data, ignored by git). Needs a members.json:
 #   [{"id":"ann","name":"Ann","tailscaleLogin":"ann@example.com"},{"id":"ben","name":"Ben","tailscaleLogin":"ben@example.com"}]
