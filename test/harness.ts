@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createModels, fauxProvider } from "@earendil-works/pi-ai";
@@ -7,6 +7,7 @@ import { openPiEngine } from "../src/server/chat/pi-engine.ts";
 import type { ThreadView } from "../src/server/chat/engine.ts";
 import type { Member } from "../src/server/members.ts";
 import { TAILSCALE_LOGIN_HEADER } from "../src/server/identity.ts";
+import { Bots, loadBots } from "../src/server/bots.ts";
 import { Threads } from "../src/server/threads.ts";
 
 export const ann: Member = { id: "ann", name: "Ann", tailscaleLogin: "ann@example.com" };
@@ -21,6 +22,9 @@ export type Hamkey = Awaited<ReturnType<typeof startHamkey>>;
 export async function startHamkey(options: { devIdentity?: string; webDir?: string } = {}) {
 	const dataDir = await mkdtemp(join(tmpdir(), "hamkey-test-"));
 	await writeFile(join(dataDir, "members.json"), JSON.stringify([ann, ben]));
+	// The example Bots in the repository double as fixtures: they are what a live data folder's `bots` folder looks like.
+	await cp(new URL("../examples/bots", import.meta.url), join(dataDir, "bots"), { recursive: true });
+	const bots = new Bots(await loadBots(dataDir, [ann, ben]), [ann, ben]);
 	const faux = fauxProvider({ tokensPerSecond: 400 });
 	const models = createModels();
 	models.setProvider(faux.provider);
@@ -32,7 +36,7 @@ export async function startHamkey(options: { devIdentity?: string; webDir?: stri
 	const server = createApp({
 		members: [ann, ben],
 		engine,
-		threads: new Threads(dataDir, engine),
+		threads: new Threads(dataDir, engine, bots),
 		devIdentity: options.devIdentity,
 		webDir: options.webDir,
 	});
@@ -44,9 +48,9 @@ export async function startHamkey(options: { devIdentity?: string; webDir?: stri
 		const request = (path: string, init: RequestInit = {}) =>
 			fetch(base + path, { ...init, headers: { ...headers, "content-type": "application/json", ...init.headers } });
 
-		async function read(until: (view: ThreadView) => boolean, timeoutMs: number, opened: () => void) {
+		async function read(bot: string, until: (view: ThreadView) => boolean, timeoutMs: number, opened: () => void) {
 			const controller = new AbortController();
-			const response = await request("/api/primary/events", { signal: controller.signal });
+			const response = await request(`/api/bots/${bot}/events`, { signal: controller.signal });
 			const views: ThreadView[] = [];
 			const timer = setTimeout(() => controller.abort(), timeoutMs);
 			try {
@@ -71,19 +75,22 @@ export async function startHamkey(options: { devIdentity?: string; webDir?: stri
 			throw new Error(`Stream ended before the expected view. Saw: ${JSON.stringify(views.at(-1))}`);
 		}
 
+		const primaryId = `primary-${headers["x-hamkey-dev-member"] ?? (headers["tailscale-user-login"] ?? "").split("@")[0]}`;
+
 		return {
 			request,
 			get: (path: string) => request(path),
-			send: (text: string, requestId?: string) =>
-				request("/api/primary/messages", { method: "POST", body: JSON.stringify({ text, requestId }) }),
+			primary: primaryId,
+			send: (text: string, requestId?: string, bot = primaryId) =>
+				request(`/api/bots/${bot}/messages`, { method: "POST", body: JSON.stringify({ text, requestId }) }),
 			/**
 			 * Opens the live stream; the promise resolves with every view received once `until` holds. `ready` resolves
 			 * when the first view has arrived, so a test can act without guessing how long the connection takes.
 			 */
-			stream(until: (view: ThreadView) => boolean, timeoutMs = 5000) {
+			stream(until: (view: ThreadView) => boolean, timeoutMs = 5000, bot = primaryId) {
 				let opened!: () => void;
 				const ready = new Promise<void>((r) => (opened = r));
-				const done = read(until, timeoutMs, opened);
+				const done = read(bot, until, timeoutMs, opened);
 				done.catch(() => opened());
 				return Object.assign(done, { ready });
 			},

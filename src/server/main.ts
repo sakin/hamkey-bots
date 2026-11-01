@@ -1,5 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { Bots, loadBots } from "./bots.ts";
 import { createApp, listenLocal } from "./app.ts";
 import { openOpenRouterEngine } from "./chat/openrouter.ts";
 import { loadConfig } from "./config.ts";
@@ -11,6 +12,8 @@ if (!process.env.OPENROUTER_API_KEY) console.warn("OPENROUTER_API_KEY is not set
 
 await mkdir(config.dataDir, { recursive: true });
 const members = await loadMembers(config.dataDir);
+
+const bots = new Bots(await loadBots(config.dataDir, members), members);
 
 const engine = await openOpenRouterEngine({
 	storagePath: join(config.dataDir, "hamkey.sqlite"),
@@ -24,7 +27,7 @@ const engine = await openOpenRouterEngine({
 const server = createApp({
 	members,
 	engine,
-	threads: new Threads(config.dataDir, engine),
+	threads: new Threads(config.dataDir, engine, bots),
 	devIdentity: config.devIdentity,
 	webDir: config.webDir,
 });
