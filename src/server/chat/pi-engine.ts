@@ -76,6 +76,16 @@ export async function openPiEngine(options: PiEngineOptions): Promise<ChatEngine
 	const listeners = new Map<ThreadId, Set<() => void>>();
 	const poke = (thread: ThreadId) => listeners.get(thread)?.forEach((l) => l());
 
+	/** What a thread runs with: the Bot's model and instructions, and only the tools the Bot has. */
+	function agentFor(spec: ThreadSpec) {
+		const offered = options.memoryAccess({ botId: spec.botId, memberId: spec.memberId ?? null })?.tools ?? [];
+		return {
+			model: { provider: options.model.provider, modelId: spec.model ?? options.model.modelId },
+			instructions: spec.instructions,
+			tools: (memoryTools.tools ?? []).filter((t) => offered.includes(t.name)),
+		};
+	}
+
 	async function conversation(thread: ThreadId) {
 		const found = await harness.conversation(thread as never, context);
 		if (found === undefined) throw new Error("Unknown thread");
@@ -96,16 +106,10 @@ export async function openPiEngine(options: PiEngineOptions): Promise<ChatEngine
 	return {
 		async createThread(spec: ThreadSpec) {
 			const binding = { botId: spec.botId, memberId: spec.memberId ?? null };
-			// Offer only the tools the Bot has; the binding is written in the same commit that creates the thread.
-			const offered = options.memoryAccess(binding)?.tools ?? [];
 			const created = await harness.createConversation(
 				{
 					ownership: { kind: "ownerless" },
-					agent: {
-						model: options.model,
-						instructions: spec.instructions,
-						tools: (memoryTools.tools ?? []).filter((t) => offered.includes(t.name)),
-					},
+					agent: agentFor(spec),
 					init: async (tx, id) => {
 						Object.assign(await tx.doc(BindingDoc, id), binding);
 					},
@@ -114,6 +118,23 @@ export async function openPiEngine(options: PiEngineOptions): Promise<ChatEngine
 			);
 			return created.id as unknown as string;
 		},
+
+		async configure(thread, spec) {
+			const target = await conversation(thread);
+			const wanted = agentFor(spec);
+			const current = await target.agent(context);
+			const same =
+				current.instructions === wanted.instructions &&
+				current.model?.modelId === wanted.model.modelId &&
+				current.tools.map((t) => t.name).join() === wanted.tools.map((t) => t.name).join();
+			if (!same) await target.configure(wanted, context);
+		},
+
+		listModels() {
+			return options.models.getModels(options.model.provider).map((m) => ({ id: m.id, name: m.name }));
+		},
+
+		defaultModel: options.model.modelId,
 
 		async send(thread, text, requestId) {
 			const target = await conversation(thread);

@@ -1,7 +1,11 @@
 export type ChatMessage = { id: string; role: "user" | "assistant"; text: string };
 export type ThreadView = { messages: ChatMessage[]; draft?: string; busy: boolean; error?: string };
 export type Me = { member: { id: string; name: string }; devMembers?: string[] };
-export type BotSummary = { id: string; name: string; kind: "personal" | "household" | "common" };
+export type BotKind = "personal" | "household" | "common";
+export type BotSummary = { id: string; name: string; kind: BotKind; editable: boolean };
+export type BotDefinition = BotSummary & { instructions: string; model: string | null; tools: string[] };
+export type BotForm = { name: string; instructions: string; model: string | null; tools: string[]; kind: BotKind };
+export type Catalog = { models: { id: string; name: string }[]; defaultModel: string; tools: string[] };
 
 /** Development only: pick which Member to act as when the server runs with a development identity. */
 const DEV_KEY = "hamkey.devMember";
@@ -98,4 +102,37 @@ export function followThread(botId: string, onView: (view: ThreadView) => void, 
 		stopped = true;
 		controller?.abort();
 	};
+}
+
+export async function fetchCatalog(): Promise<Catalog | undefined> {
+	try {
+		const res = await fetch("/api/models", { headers: headers() });
+		return res.ok ? res.json() : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+export async function fetchDefinition(botId: string): Promise<BotDefinition | undefined> {
+	try {
+		const res = await fetch(`/api/bots/${encodeURIComponent(botId)}/definition`, { headers: headers() });
+		return res.ok ? res.json() : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+/** Creates (no `botId`) or edits a Bot. Returns the saved Bot, or the reason it was refused. */
+export async function saveBot(form: BotForm, botId?: string): Promise<{ bot: BotDefinition } | { error: string }> {
+	try {
+		const res = await fetch(botId === undefined ? "/api/bots" : `/api/bots/${encodeURIComponent(botId)}`, {
+			method: botId === undefined ? "POST" : "PUT",
+			headers: { ...headers(), "content-type": "application/json" },
+			body: JSON.stringify(form),
+		});
+		const body = await res.json().catch(() => ({}));
+		return res.ok ? { bot: body } : { error: body.error ?? "Could not save the Bot." };
+	} catch {
+		return { error: "Could not reach the server." };
+	}
 }

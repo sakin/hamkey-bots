@@ -5,11 +5,12 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { streamSSE } from "hono/streaming";
-import type { Bots } from "./bots.ts";
+import { type Bot, type BotKind, type BotInput, type Bots, InvalidBot } from "./bots.ts";
 import type { ChatEngine } from "./chat/engine.ts";
+import { BOT_TOOLS } from "./memory/access.ts";
 import { resolveMember } from "./identity.ts";
 import type { Member } from "./members.ts";
-import { Threads } from "./threads.ts";
+import { specFor, Threads } from "./threads.ts";
 
 export type AppOptions = {
 	members: readonly Member[];
@@ -46,12 +47,79 @@ export function createApp(options: AppOptions): Server {
 		return c.json({ member: { id: member.id, name: member.name }, devMembers });
 	});
 
-	api.get("/bots", (c) =>
-		c.json({ bots: bots.listFor(c.get("member")).map(({ id, name, kind }) => ({ id, name, kind })) }),
+	// Hand edits to the Bot files are picked up on the next request that touches Bots.
+	api.use("/bots/*", async (c, next) => {
+		await bots.reload();
+		await next();
+	});
+	api.use("/bots", async (c, next) => {
+		await bots.reload();
+		await next();
+	});
+
+	const summary = (bot: Bot) => ({ id: bot.id, name: bot.name, kind: bot.kind, editable: bots.isEditable(bot) });
+	const definition = (bot: Bot) => ({
+		...summary(bot),
+		instructions: bot.instructions,
+		model: bot.model ?? null,
+		tools: bot.tools ?? [...BOT_TOOLS],
+	});
+
+	api.get("/bots", (c) => c.json({ bots: bots.listFor(c.get("member")).map(summary) }));
+
+	api.get("/models", (c) =>
+		c.json({ models: engine.listModels(), defaultModel: engine.defaultModel, tools: BOT_TOOLS }),
 	);
+
+	/** Reads what a Member may set from a request body, or says what is wrong. */
+	function readInput(body: unknown): BotInput | string {
+		const b = (body ?? {}) as Record<string, unknown>;
+		const input: BotInput = {
+			name: b.name as string,
+			instructions: b.instructions as string,
+			model: b.model === null || b.model === "" ? undefined : (b.model as string | undefined),
+			tools: b.tools as string[] | undefined,
+		};
+		if (input.model !== undefined && !engine.listModels().some((m) => m.id === input.model)) {
+			return "That model is not in the catalog.";
+		}
+		return input;
+	}
+
+	const FORM_LIMIT = bodyLimit({ maxSize: MAX_BODY, onError: (c) => c.json({ error: "Too large" }, 413) });
+
+	api.post("/bots", FORM_LIMIT, async (c) => {
+		const body = await c.req.json().catch(() => undefined);
+		const input = readInput(body);
+		if (typeof input === "string") return c.json({ error: input }, 400);
+		try {
+			const bot = await bots.create(c.get("member"), body?.kind as BotKind, input);
+			return c.json(definition(bot), 201);
+		} catch (error) {
+			if (error instanceof InvalidBot) return c.json({ error: error.message }, 400);
+			throw error;
+		}
+	});
+
+	api.put("/bots/:bot", FORM_LIMIT, async (c) => {
+		const input = readInput(await c.req.json().catch(() => undefined));
+		if (typeof input === "string") return c.json({ error: input }, 400);
+		try {
+			const bot = await bots.update(c.get("member"), c.req.param("bot"), input);
+			return bot === undefined ? notFound(c) : c.json(definition(bot));
+		} catch (error) {
+			if (error instanceof InvalidBot) return c.json({ error: error.message }, 400);
+			throw error;
+		}
+	});
 
 	// A Bot the Member may not use answers exactly like one that does not exist.
 	const notFound = (c: Context) => c.json({ error: "Not found" }, 404);
+
+	api.get("/bots/:bot/definition", (c) => {
+		const bot = bots.find(c.get("member"), c.req.param("bot"));
+		return bot === undefined ? notFound(c) : c.json(definition(bot));
+	});
 
 	api.get("/bots/:bot", async (c) => {
 		const found = await threads.mainThread(c.get("member"), c.req.param("bot"));
@@ -69,6 +137,8 @@ export function createApp(options: AppOptions): Server {
 			const text = typeof body?.text === "string" ? body.text.trim() : "";
 			if (text === "") return c.json({ error: "Message text is required" }, 400);
 			const requestId = typeof body.requestId === "string" && body.requestId !== "" ? `${member.id}:${body.requestId}` : randomUUID();
+			// The Bot may have been edited since this thread last ran; its next turn uses the current definition.
+			await engine.configure(found.thread, specFor(found.bot, found.memberId));
 			await engine.send(found.thread, text, requestId);
 			return c.json({ ok: true }, 202);
 		},

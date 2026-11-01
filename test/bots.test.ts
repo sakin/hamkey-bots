@@ -26,10 +26,10 @@ describe("Bot list", () => {
 	it("shows each Member only the Bots they may use, with each kind", async () => {
 		hamkey = await startHamkey();
 		expect(await list(hamkey.ann)).toEqual([
-			{ id: "primary-ann", name: "Primary Bot", kind: "personal" },
-			{ id: "meal-planner", name: "Meal Planner", kind: "household" },
-			{ id: "research", name: "Research Bot", kind: "common" },
-			{ id: "trip-planner", name: "Trip Planner", kind: "personal" },
+			{ id: "primary-ann", name: "Primary Bot", kind: "personal", editable: false },
+			{ id: "meal-planner", name: "Meal Planner", kind: "household", editable: true },
+			{ id: "research", name: "Research Bot", kind: "common", editable: true },
+			{ id: "trip-planner", name: "Trip Planner", kind: "personal", editable: true },
 		]);
 		const bens = await list(hamkey.ben);
 		expect(bens.map((b: { id: string }) => b.id)).toEqual(["primary-ben", "meal-planner", "research"]);

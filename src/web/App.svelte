@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, tick } from "svelte";
-	import { devMember, fetchBots, fetchMe, followThread, sendMessage, setDevMember, type BotSummary, type Me, type ThreadView } from "./api.ts";
+	import BotEditor from "./BotEditor.svelte";
+	import { devMember, fetchBots, fetchMe, followThread, sendMessage, setDevMember, type BotDefinition, type BotSummary, type Me, type ThreadView } from "./api.ts";
 
 	let me = $state<Me | undefined>();
 	let refused = $state(false);
@@ -11,6 +12,8 @@
 	let online = $state(true);
 	let text = $state("");
 	let sending = $state(false);
+	/** What the form is doing: nothing, creating a Bot, or editing the current one. */
+	let editing = $state<"create" | "edit" | undefined>();
 	let scroller: HTMLElement | undefined = $state();
 
 	const bot = $derived(bots.find((b) => b.id === botId));
@@ -23,6 +26,13 @@
 		botsFailed = found === undefined;
 		bots = found ?? [];
 		botId = bots[0]?.id;
+	}
+
+	async function saved(saved: BotDefinition) {
+		editing = undefined;
+		const found = await fetchBots();
+		if (found !== undefined) bots = found;
+		botId = saved.id;
 	}
 
 	onMount(() => {
@@ -81,6 +91,9 @@
 		</div>
 		<div class="flex items-center gap-2">
 			{#if !online}<span class="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">Reconnecting…</span>{/if}
+			{#if bot?.editable && !editing}
+				<button type="button" onclick={() => (editing = "edit")} class="rounded border border-gray-300 px-2 py-1 text-xs">Edit</button>
+			{/if}
 			{#if import.meta.env.DEV}
 				<select
 					class="rounded border border-gray-300 text-xs"
@@ -112,10 +125,23 @@
 					<span class="text-xs opacity-70">{b.kind}</span>
 				</button>
 			{/each}
+			<button
+				type="button"
+				onclick={() => (editing = "create")}
+				aria-label="Create a Bot"
+				class="shrink-0 rounded-full border border-dashed border-gray-400 px-3 py-1.5 text-sm text-gray-700"
+			>
+				+ New
+			</button>
 		</nav>
 		{#if botsFailed}
 			<p class="px-4 py-2 text-center text-sm text-red-600" role="alert">Could not load your Bots. Reload to try again.</p>
 		{/if}
+		{#if editing}
+			{#key `${editing}:${botId}`}
+				<BotEditor botId={editing === "edit" ? botId : undefined} onsaved={saved} oncancel={() => (editing = undefined)} />
+			{/key}
+		{:else}
 		<main bind:this={scroller} class="flex-1 space-y-3 overflow-y-auto px-4 py-4" aria-live="polite">
 			{#if view.messages.length === 0 && !view.draft}
 				<p class="pt-8 text-center text-sm text-gray-400">Say hello to start the conversation.</p>
@@ -161,5 +187,6 @@
 				Send
 			</button>
 		</form>
+		{/if}
 	{/if}
 </div>

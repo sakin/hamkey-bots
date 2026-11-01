@@ -22,7 +22,7 @@ export type Hamkey = Awaited<ReturnType<typeof startHamkey>>;
  * A real Hamkey server on a random localhost port with temporary storage. Only the model is replaced, by Pi's faux
  * provider, so tests drive the same HTTP and streaming API a Member's phone does.
  */
-export async function startHamkey(options: { devIdentity?: string; webDir?: string; dataDir?: string; extraBots?: object[]; contextWindow?: number; compaction?: CompactionSettings } = {}) {
+export async function startHamkey(options: { devIdentity?: string; webDir?: string; dataDir?: string; extraBots?: object[]; extraModels?: string[]; contextWindow?: number; compaction?: CompactionSettings } = {}) {
 	// Passing a `dataDir` from an earlier run, stopped with `keepData`, is a server restart.
 	const dataDir = options.dataDir ?? (await mkdtemp(join(tmpdir(), "hamkey-test-")));
 	if (options.dataDir === undefined) {
@@ -35,10 +35,13 @@ export async function startHamkey(options: { devIdentity?: string; webDir?: stri
 	}
 	const memory = new FileMemory(dataDir);
 	const learned = new LearnedNotes(dataDir);
-	const bots = new Bots(await loadBots(dataDir, [ann, ben]), [ann, ben]);
+	const bots = new Bots(await loadBots(dataDir, [ann, ben]), [ann, ben], dataDir);
 	const faux = fauxProvider({
 		tokensPerSecond: 400,
-		models: options.contextWindow === undefined ? undefined : [{ id: "faux-small", contextWindow: options.contextWindow }],
+		models:
+			options.contextWindow === undefined && options.extraModels === undefined
+				? undefined
+				: [{ id: "faux-small", contextWindow: options.contextWindow }, ...(options.extraModels ?? []).map((id) => ({ id }))],
 	});
 	const models = createModels();
 	models.setProvider(faux.provider);
