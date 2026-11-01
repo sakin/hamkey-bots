@@ -6,5 +6,5 @@ export default defineConfig({
 	root: "src/web",
 	plugins: [tailwindcss(), svelte()],
 	build: { outDir: "../../dist/web", emptyOutDir: true },
-	server: { proxy: { "/api": "http://127.0.0.1:3000" } },
+	server: { proxy: { "^/api/": "http://127.0.0.1:3000" } },
 });
