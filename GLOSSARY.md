@@ -48,6 +48,16 @@ _Avoid_: Shared bot, global bot
 The Seeded Common Bot that does web research for Members and for other Bots. It is the only Bot with web access.
 _Avoid_: Web bot, search bot
 
+### Memory
+
+**Fact**:
+One thing a Bot has been told to remember, kept outside any thread so it outlives compaction.
+_Avoid_: Note, entry
+
+**Memory scope**:
+Where a Fact lives: the household, one Member, or one Bot (for a Common Bot, one Bot for one Member). A Bot's reach is set by its kind, never by what the model asks for.
+_Avoid_: Namespace, bucket
+
 ### Privacy
 
 **Ask**:

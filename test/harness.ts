@@ -8,6 +8,8 @@ import type { ThreadView } from "../src/server/chat/engine.ts";
 import type { Member } from "../src/server/members.ts";
 import { TAILSCALE_LOGIN_HEADER } from "../src/server/identity.ts";
 import { Bots, loadBots } from "../src/server/bots.ts";
+import { FileMemory } from "../src/server/memory/file-memory.ts";
+import type { CompactionSettings } from "../src/server/chat/pi-engine.ts";
 import { Threads } from "../src/server/threads.ts";
 
 export const ann: Member = { id: "ann", name: "Ann", tailscaleLogin: "ann@example.com" };
@@ -19,19 +21,32 @@ export type Hamkey = Awaited<ReturnType<typeof startHamkey>>;
  * A real Hamkey server on a random localhost port with temporary storage. Only the model is replaced, by Pi's faux
  * provider, so tests drive the same HTTP and streaming API a Member's phone does.
  */
-export async function startHamkey(options: { devIdentity?: string; webDir?: string } = {}) {
-	const dataDir = await mkdtemp(join(tmpdir(), "hamkey-test-"));
-	await writeFile(join(dataDir, "members.json"), JSON.stringify([ann, ben]));
-	// The example Bots in the repository double as fixtures: they are what a live data folder's `bots` folder looks like.
-	await cp(new URL("../examples/bots", import.meta.url), join(dataDir, "bots"), { recursive: true });
+export async function startHamkey(options: { devIdentity?: string; webDir?: string; dataDir?: string; extraBots?: object[]; contextWindow?: number; compaction?: CompactionSettings } = {}) {
+	// Passing a `dataDir` from an earlier run, stopped with `keepData`, is a server restart.
+	const dataDir = options.dataDir ?? (await mkdtemp(join(tmpdir(), "hamkey-test-")));
+	if (options.dataDir === undefined) {
+		await writeFile(join(dataDir, "members.json"), JSON.stringify([ann, ben]));
+		// The example Bots in the repository double as fixtures: they are what a live data folder's `bots` folder looks like.
+		await cp(new URL("../examples/bots", import.meta.url), join(dataDir, "bots"), { recursive: true });
+	}
+	for (const bot of options.extraBots ?? []) {
+		await writeFile(join(dataDir, "bots", `${(bot as { id: string }).id}.json`), JSON.stringify(bot));
+	}
+	const memory = new FileMemory(dataDir);
 	const bots = new Bots(await loadBots(dataDir, [ann, ben]), [ann, ben]);
-	const faux = fauxProvider({ tokensPerSecond: 400 });
+	const faux = fauxProvider({
+		tokensPerSecond: 400,
+		models: options.contextWindow === undefined ? undefined : [{ id: "faux-small", contextWindow: options.contextWindow }],
+	});
 	const models = createModels();
 	models.setProvider(faux.provider);
 	const engine = await openPiEngine({
 		storagePath: join(dataDir, "hamkey.sqlite"),
 		models,
 		model: { provider: faux.getModel().provider, modelId: faux.getModel().id },
+		memory,
+		compaction: options.compaction,
+		memoryAccess: (binding) => bots.memoryAccess(binding),
 	});
 	const server = createApp({
 		members: [ann, ben],
@@ -100,6 +115,7 @@ export async function startHamkey(options: { devIdentity?: string; webDir?: stri
 
 	return {
 		dataDir,
+		memory,
 		server,
 		faux,
 		port,
@@ -107,11 +123,11 @@ export async function startHamkey(options: { devIdentity?: string; webDir?: stri
 		asTailscale: (login: string) => as({ [TAILSCALE_LOGIN_HEADER]: login }),
 		ann: as({ [TAILSCALE_LOGIN_HEADER]: ann.tailscaleLogin }, ann.id),
 		ben: as({ [TAILSCALE_LOGIN_HEADER]: ben.tailscaleLogin }, ben.id),
-		async stop() {
+		async stop({ keepData = false } = {}) {
 			server.closeAllConnections();
 			await new Promise((r) => server.close(r));
 			await engine.close();
-			await rm(dataDir, { recursive: true, force: true });
+			if (!keepData) await rm(dataDir, { recursive: true, force: true });
 		},
 	};
 }
