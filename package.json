@@ -9,6 +9,28 @@
   "dependencies": {
     "@earendil-works/chord": "1.4.0",
     "@earendil-works/pi-ai": "1.4.0",
-    "@earendil-works/pi-durable": "1.4.0"
+    "@earendil-works/pi-durable": "1.4.0",
+    "@hono/node-server": "2.1.5",
+    "hono": "4.13.13"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "7.3.1",
+    "@tailwindcss/vite": "4.3.3",
+    "@types/node": "24.19.2",
+    "svelte": "5.57.3",
+    "svelte-check": "4.7.7",
+    "tailwindcss": "4.3.3",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3",
+    "vite": "8.3.5",
+    "vitest": "5.0.5"
+  },
+  "scripts": {
+    "dev:server": "NODE_ENV=development tsx watch --env-file-if-exists=.env.local src/server/main.ts",
+    "dev:web": "vite",
+    "build": "vite build",
+    "start": "NODE_ENV=production tsx --env-file-if-exists=.env.local src/server/main.ts",
+    "typecheck": "tsc && svelte-check --tsconfig ./tsconfig.web.json",
+    "test": "vitest run"
   }
 }

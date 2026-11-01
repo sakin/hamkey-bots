@@ -5,3 +5,11 @@ node = "24.22.2"
 [tasks.install]
 description = "Install dependencies exactly as locked"
 run = "npm ci"
+
+[tasks.dev]
+description = "Run the server (dev identity from mise.local.toml) and web app"
+run = ["npm run dev:server & npm run dev:web; wait"]
+
+[tasks.test]
+description = "Typecheck and run the tests"
+run = ["npm run typecheck", "npm test"]
