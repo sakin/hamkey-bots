@@ -1,7 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Member } from "./members.ts";
-import { accessFor, type MemoryAccess, MEMORY_TOOLS } from "./memory/access.ts";
+import { accessFor, type MemoryAccess, BOT_TOOLS } from "./memory/access.ts";
 import { primaryBotFor } from "./primary-bot.ts";
 
 export type BotKind = "personal" | "household" | "common";
@@ -63,9 +63,9 @@ function validate(raw: unknown, file: string, members: readonly Member[]): Bot {
 		return fail(`a ${b.kind} Bot has no owner`);
 	}
 	if (b.tools !== undefined) {
-		const known: readonly string[] = MEMORY_TOOLS;
+		const known: readonly string[] = BOT_TOOLS;
 		if (!Array.isArray(b.tools) || !b.tools.every((t) => typeof t === "string" && known.includes(t))) {
-			return fail(`tools must be a list drawn from ${MEMORY_TOOLS.join(", ")}`);
+			return fail(`tools must be a list drawn from ${BOT_TOOLS.join(", ")}`);
 		}
 	}
 	return { id: b.id, name: b.name, kind: b.kind as BotKind, owner: b.owner, instructions: b.instructions, tools: b.tools };

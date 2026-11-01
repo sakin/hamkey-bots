@@ -1,6 +1,8 @@
 import { Type } from "@earendil-works/pi-ai";
 import { type ConversationId, defineDoc, defineExtension, defineTool, type DocumentReader, hook, section, ToolTask } from "@earendil-works/pi-durable";
 import type { Context } from "@earendil-works/chord/context";
+import type { LearnedNotes } from "../memory/learned-notes.ts";
+import { LEARNED_CAP } from "../memory/learned-notes.ts";
 import type { MemoryAccess } from "../memory/access.ts";
 import type { Fact, Memory } from "../memory/memory.ts";
 
@@ -31,7 +33,7 @@ const text = (value: string) => ({ output: [{ type: "text" as const, text: value
  * one. The `beforeTool` hook is a second check that the Bot may use the tool at all, not the main control: the tools a
  * thread is offered are chosen when it is created.
  */
-export function memoryExtension(memory: Memory, resolve: AccessResolver) {
+export function memoryExtension(memory: Memory, learned: LearnedNotes, resolve: AccessResolver) {
 	async function accessOf(read: DocumentReader, id: ConversationId, context: Context) {
 		const binding = await read.snapshot(BindingDoc, id, context);
 		return binding === undefined || binding.botId === "" ? undefined : resolve(binding);
@@ -72,10 +74,29 @@ export function memoryExtension(memory: Memory, resolve: AccessResolver) {
 		},
 	});
 
+	// The Bot's own notes. Which file is the Bot's comes from the conversation's binding, so the Bot cannot name another.
+	const learn = defineTool({
+		name: "learned_update",
+		description: `Rewrite your own notes about how to work better with this household: habits, preferences about how you answer. Send the whole new notes, at most ${LEARNED_CAP} characters. This replaces the old notes. Do not put private facts about a Member here; use memory_save for those.`,
+		parameters: Type.Object({ notes: Type.String() }),
+		async execute(args, api, context) {
+			const binding = await api.snapshot(BindingDoc, api.conversationId, context);
+			if (binding === undefined || binding.botId === "" || resolve(binding) === undefined) throw new Error("Notes are not available here.");
+			await learned.write(binding.botId, args.notes);
+			return text("Notes updated.");
+		},
+	});
+
 	return defineExtension({
 		name: "hamkey-memory",
-		tools: [save, search, forget],
+		tools: [save, search, forget, learn],
 		sections: [
+			section("learned", async (input, context) => {
+				const binding = await input.read.snapshot(BindingDoc, input.conversationId, context);
+				if (binding === undefined || binding.botId === "" || resolve(binding) === undefined) return undefined;
+				const notes = (await learned.read(binding.botId)).trim();
+				return notes === "" ? undefined : `Your own notes from earlier conversations:\n${notes}`;
+			}),
 			section("memory", async (input, context) => {
 				const access = await accessOf(input.read, input.conversationId, context);
 				if (access === undefined || !access.tools.some((t) => t.startsWith("memory_"))) return undefined;
