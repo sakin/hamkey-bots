@@ -1,3 +1,7 @@
 # Project tools. Secrets go in mise.local.toml, which git ignores.
 [tools]
 node = "24.22.2"
+
+[tasks.install]
+description = "Install dependencies exactly as locked"
+run = "npm ci"
