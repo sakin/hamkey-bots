@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { createReadStream } from "node:fs";
-import { stat } from "node:fs/promises";
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { extname, join, normalize } from "node:path";
+import type { Server } from "node:http";
+import { createAdaptorServer } from "@hono/node-server";
+import { serveStatic } from "@hono/node-server/serve-static";
+import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
+import { streamSSE } from "hono/streaming";
 import type { ChatEngine } from "./chat/engine.ts";
 import { resolveMember } from "./identity.ts";
 import type { Member } from "./members.ts";
@@ -17,109 +19,84 @@ export type AppOptions = {
 	webDir?: string;
 };
 
+type Env = { Variables: { member: Member } };
+
 const MAX_BODY = 32 * 1024;
-const TYPES: Record<string, string> = {
-	".html": "text/html; charset=utf-8",
-	".js": "text/javascript; charset=utf-8",
-	".css": "text/css; charset=utf-8",
-	".svg": "image/svg+xml",
-	".json": "application/json",
-	".webmanifest": "application/manifest+json",
-	".png": "image/png",
-};
-
-function json(res: ServerResponse, status: number, body: unknown) {
-	res.writeHead(status, { "content-type": "application/json", "cache-control": "no-store" });
-	res.end(JSON.stringify(body));
-}
-
-async function readJson(req: IncomingMessage): Promise<unknown> {
-	let size = 0;
-	const chunks: Buffer[] = [];
-	for await (const chunk of req) {
-		size += (chunk as Buffer).length;
-		if (size > MAX_BODY) throw new Error("too large");
-		chunks.push(chunk as Buffer);
-	}
-	return JSON.parse(Buffer.concat(chunks).toString("utf8"));
-}
+const KEEP_ALIVE_MS = 25_000;
 
 /** Builds the HTTP server. It does not listen; `listenLocal` does, and only on the loopback interface. */
 export function createApp(options: AppOptions): Server {
 	const { engine, threads } = options;
 
-	async function api(req: IncomingMessage, res: ServerResponse, path: string) {
-		const member = resolveMember(req.headers, { members: options.members, devIdentity: options.devIdentity });
-		if (member === undefined) return json(res, 403, { error: "Unknown identity" });
+	const api = new Hono<Env>();
 
-		if (req.method === "GET" && path === "/api/me") {
-			return json(res, 200, { member: { id: member.id, name: member.name }, bot: { name: primaryBotFor(member).name } });
-		}
-		if (req.method === "GET" && path === "/api/primary") {
-			return json(res, 200, await engine.view(await threads.primaryThreadFor(member)));
-		}
-		if (req.method === "POST" && path === "/api/primary/messages") {
-			let body: unknown;
-			try {
-				body = await readJson(req);
-			} catch {
-				return json(res, 400, { error: "Invalid body" });
-			}
-			const text = typeof (body as { text?: unknown })?.text === "string" ? (body as { text: string }).text.trim() : "";
-			if (text === "") return json(res, 400, { error: "Message text is required" });
-			const requestId = (body as { requestId?: unknown }).requestId;
-			await engine.send(
-				await threads.primaryThreadFor(member),
-				text,
-				typeof requestId === "string" && requestId !== "" ? `${member.id}:${requestId}` : randomUUID(),
-			);
-			return json(res, 202, { ok: true });
-		}
-		if (req.method === "GET" && path === "/api/primary/events") {
-			const thread = await threads.primaryThreadFor(member);
-			res.writeHead(200, {
-				"content-type": "text/event-stream",
-				"cache-control": "no-store",
-				connection: "keep-alive",
-				"x-accel-buffering": "no",
-			});
+	// Every API route resolves the Member first, so no route can forget to.
+	api.use("*", async (c, next) => {
+		const member = resolveMember(c.req.header(), { members: options.members, devIdentity: options.devIdentity });
+		if (member === undefined) return c.json({ error: "Unknown identity" }, 403);
+		c.set("member", member);
+		await next();
+	});
+
+	api.get("/me", (c) => {
+		const member = c.get("member");
+		return c.json({ member: { id: member.id, name: member.name }, bot: { name: primaryBotFor(member).name } });
+	});
+
+	api.get("/primary", async (c) => c.json(await engine.view(await threads.primaryThreadFor(c.get("member")))));
+
+	api.post(
+		"/primary/messages",
+		bodyLimit({ maxSize: MAX_BODY, onError: (c) => c.json({ error: "Message too large" }, 413) }),
+		async (c) => {
+			const member = c.get("member");
+			const body = await c.req.json().catch(() => undefined);
+			const text = typeof body?.text === "string" ? body.text.trim() : "";
+			if (text === "") return c.json({ error: "Message text is required" }, 400);
+			const requestId = typeof body.requestId === "string" && body.requestId !== "" ? `${member.id}:${body.requestId}` : randomUUID();
+			await engine.send(await threads.primaryThreadFor(member), text, requestId);
+			return c.json({ ok: true }, 202);
+		},
+	);
+
+	api.get("/primary/events", async (c) => {
+		const thread = await threads.primaryThreadFor(c.get("member"));
+		return streamSSE(c, async (stream) => {
 			const unsubscribe = await engine.subscribe(thread, (view) => {
-				res.write(`data: ${JSON.stringify(view)}\n\n`);
+				void stream.writeSSE({ data: JSON.stringify(view) }).catch(() => {});
 			});
-			const keepAlive = setInterval(() => res.write(": keep-alive\n\n"), 25_000);
-			req.on("close", () => {
+			const keepAlive = setInterval(() => void stream.write(": keep-alive\n\n").catch(() => {}), KEEP_ALIVE_MS);
+			const release = () => {
 				clearInterval(keepAlive);
 				unsubscribe();
+			};
+			// The callback must stay pending until the client goes, or the stream closes.
+			await new Promise<void>((resolve) => {
+				stream.onAbort(resolve);
+				if (stream.aborted) resolve();
 			});
-			return;
-		}
-		return json(res, 404, { error: "Not found" });
-	}
-
-	async function serveStatic(req: IncomingMessage, res: ServerResponse, path: string) {
-		const root = options.webDir;
-		if (root === undefined || (req.method !== "GET" && req.method !== "HEAD")) return json(res, 404, { error: "Not found" });
-		const safe = normalize(path).replace(/^(\.\.[/\\])+/, "");
-		let file = join(root, safe);
-		if (!file.startsWith(root)) return json(res, 404, { error: "Not found" });
-		const info = await stat(file).catch(() => undefined);
-		if (info === undefined || info.isDirectory()) file = join(root, "index.html");
-		const final = await stat(file).catch(() => undefined);
-		if (final === undefined) return json(res, 404, { error: "Not found" });
-		res.writeHead(200, { "content-type": TYPES[extname(file)] ?? "application/octet-stream" });
-		createReadStream(file).pipe(res);
-	}
-
-	return createServer((req, res) => {
-		const path = new URL(req.url ?? "/", "http://localhost").pathname;
-		// The web app's shell is public to anyone who can reach the port; only data is identity-gated.
-		const handler = path.startsWith("/api/") ? api(req, res, path) : serveStatic(req, res, path);
-		handler.catch((error) => {
-			console.error(error);
-			if (!res.headersSent) json(res, 500, { error: "Internal error" });
-			else res.end();
+			release();
 		});
 	});
+
+	// An unknown API path must not fall through to the web app's index.html.
+	api.all("*", (c) => c.json({ error: "Not found" }, 404));
+
+	const app = new Hono();
+	app.route("/api", api);
+	if (options.webDir !== undefined) {
+		// The app shell is public to anyone who can reach the port; only data is identity-gated.
+		app.use("*", serveStatic({ root: options.webDir }));
+		app.get("*", serveStatic({ root: options.webDir, path: "index.html" }));
+	}
+	app.notFound((c) => c.json({ error: "Not found" }, 404));
+	app.onError((error, c) => {
+		console.error(error);
+		return c.json({ error: "Internal error" }, 500);
+	});
+
+	// pi-ai makes its own outbound fetch calls, so leave the global Request and Response alone.
+	return createAdaptorServer({ fetch: app.fetch, overrideGlobalObjects: false }) as Server;
 }
 
 /** Hamkey listens on loopback only, so identity headers cannot be forged from the network. */

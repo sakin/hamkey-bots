@@ -1,4 +1,6 @@
 import { existsSync } from "node:fs";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fauxAssistantMessage, fauxText } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it } from "vitest";
@@ -116,5 +118,42 @@ describe("data folder", () => {
 		await hamkey.ann.get("/api/primary");
 		expect(existsSync(join(hamkey.dataDir, "hamkey.sqlite"))).toBe(true);
 		expect(existsSync(join(hamkey.dataDir, "threads.json"))).toBe(true);
+	});
+});
+
+describe("routing", () => {
+	it("answers an unknown API path with a JSON 404, not the web app", async () => {
+		const webDir = await mkdtemp(join(tmpdir(), "hamkey-web-"));
+		await writeFile(join(webDir, "index.html"), "<h1>app</h1>");
+		hamkey = await startHamkey({ webDir });
+		const missing = await hamkey.ann.get("/api/zzz");
+		expect(missing.status).toBe(404);
+		expect(await missing.json()).toEqual({ error: "Not found" });
+		const page = await fetch(`http://127.0.0.1:${hamkey.port}/some/screen`);
+		expect(await page.text()).toContain("<h1>app</h1>");
+	});
+
+	it("rejects invalid JSON and oversized messages", async () => {
+		hamkey = await startHamkey();
+		const invalid = await fetch(`http://127.0.0.1:${hamkey.port}/api/primary/messages`, {
+			method: "POST",
+			headers: { "tailscale-user-login": "ann@example.com", "content-type": "application/json" },
+			body: "{nope",
+		});
+		expect(invalid.status).toBe(400);
+		expect((await hamkey.ann.send("x".repeat(40_000))).status).toBe(413);
+	});
+
+	it("keeps serving after a client drops its stream", async () => {
+		hamkey = await startHamkey();
+		const controller = new AbortController();
+		const response = await fetch(`http://127.0.0.1:${hamkey.port}/api/primary/events`, {
+			headers: { "tailscale-user-login": "ann@example.com" },
+			signal: controller.signal,
+		});
+		await response.body!.getReader().read();
+		controller.abort();
+		await new Promise((r) => setTimeout(r, 50));
+		expect((await hamkey.ann.get("/api/primary")).status).toBe(200);
 	});
 });

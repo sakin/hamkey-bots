@@ -18,7 +18,7 @@ export type Hamkey = Awaited<ReturnType<typeof startHamkey>>;
  * A real Hamkey server on a random localhost port with temporary storage. Only the model is replaced, by Pi's faux
  * provider, so tests drive the same HTTP and streaming API a Member's phone does.
  */
-export async function startHamkey(options: { devIdentity?: string } = {}) {
+export async function startHamkey(options: { devIdentity?: string; webDir?: string } = {}) {
 	const dataDir = await mkdtemp(join(tmpdir(), "hamkey-test-"));
 	await writeFile(join(dataDir, "members.json"), JSON.stringify([ann, ben]));
 	const faux = fauxProvider({ tokensPerSecond: 400 });
@@ -34,6 +34,7 @@ export async function startHamkey(options: { devIdentity?: string } = {}) {
 		engine,
 		threads: new Threads(dataDir, engine),
 		devIdentity: options.devIdentity,
+		webDir: options.webDir,
 	});
 	const port = await listenLocal(server, 0);
 	const base = `http://127.0.0.1:${port}`;
