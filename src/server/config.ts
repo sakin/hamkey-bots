@@ -12,7 +12,7 @@ export type Config = {
 	webDir?: string;
 };
 
-export const DEFAULT_MODEL = "anthropic/claude-sonnet-5.5";
+export const DEFAULT_MODEL = "deepseek/deepseek-v4.1-flash";
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 	const production = env.NODE_ENV === "production";
