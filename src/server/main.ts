@@ -22,6 +22,7 @@ const bots = new Bots(await loadBots(config.dataDir, members), members, config.d
 let spend: DailySpend | undefined;
 const engine = await openOpenRouterEngine({
 	gate: () => spend!.refusal(),
+	members,
 	memory: new FileMemory(config.dataDir),
 	learned: new LearnedNotes(config.dataDir),
 	memoryAccess: (binding) => bots.memoryAccess(binding),

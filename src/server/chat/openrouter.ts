@@ -12,6 +12,7 @@ import { openPiEngine } from "./pi-engine.ts";
 export function openOpenRouterEngine(options: {
 	storagePath: string;
 	modelId: string;
+	members: readonly { id: string; name: string }[];
 	memory: Memory;
 	learned: LearnedNotes;
 	memoryAccess: AccessResolver;
@@ -23,6 +24,7 @@ export function openOpenRouterEngine(options: {
 		provider: openrouterProvider(),
 		gate: options.gate,
 		model: { provider: "openrouter", modelId: options.modelId },
+		members: options.members,
 		memory: options.memory,
 		learned: options.learned,
 		memoryAccess: options.memoryAccess,

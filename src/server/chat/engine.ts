@@ -5,7 +5,11 @@
 
 export type ThreadId = string;
 
-export type ChatMessage = { id: string; role: "user" | "assistant"; text: string };
+/** `author` is the id of the Member who wrote a user message. Threads from before authors were recorded have none. */
+export type ChatMessage = { id: string; role: "user" | "assistant"; text: string; author?: string };
+
+/** The Member behind a message. */
+export type Author = { id: string; name: string };
 
 /** Everything a client needs to draw a thread, taken from committed state only. */
 export type ThreadView = {
@@ -36,7 +40,11 @@ export interface ChatEngine {
 	listModels(): ModelInfo[];
 	/** The model a Bot uses when it names none. */
 	readonly defaultModel: string;
-	send(thread: ThreadId, text: string, requestId: string): Promise<void>;
+	/**
+	 * Adds a message from `author`. With `labelled`, the model sees it prefixed with the author's name, which a thread
+	 * shared by both Members needs; the thread's view always shows the plain text.
+	 */
+	send(thread: ThreadId, text: string, requestId: string, author: Author, labelled: boolean): Promise<void>;
 	view(thread: ThreadId): Promise<ThreadView>;
 	/** Calls `listener` with the current view, then after every commit. Returns an unsubscribe function. */
 	subscribe(thread: ThreadId, listener: (view: ThreadView) => void): Promise<() => void>;

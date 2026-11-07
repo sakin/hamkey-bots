@@ -36,6 +36,10 @@ _Avoid_: Private bot
 A Bot that belongs to the household rather than to one Member. Both Members use it.
 _Avoid_: Shared bot
 
+**Shared thread**:
+The one thread a Household Bot has, which both Members write in. Each message shows who sent it, and the Bot sees the sender's name at the start of each message. Anything saved from it goes to household memory.
+_Avoid_: Group chat
+
 **Seeded Bot**:
 A Bot that Hamkey ships as a starting point, such as the meal planner. Seeded describes where a Bot came from; it gives the Bot no special status over Bots the Members create.
 _Avoid_: Default bot, built-in bot

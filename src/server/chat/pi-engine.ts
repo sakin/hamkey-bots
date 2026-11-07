@@ -5,8 +5,12 @@ import type { LearnedNotes } from "../memory/learned-notes.ts";
 import type { Memory } from "../memory/memory.ts";
 import { type AccessResolver, BindingDoc, memoryExtension } from "./memory-tools.ts";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
-import type { ChatEngine, ChatMessage, RequestGate, ThreadId, ThreadSpec, ThreadView } from "./engine.ts";
+import type { Author, ChatEngine, ChatMessage, RequestGate, ThreadId, ThreadSpec, ThreadView } from "./engine.ts";
 import { gatedProvider } from "./gated-provider.ts";
+import { sharedThreadExtension } from "./shared-thread.ts";
+
+/** The entry kind of a message sent through Hamkey. It records who wrote it; the model sees the input's `content`. */
+const MESSAGE_KIND = "hamkey.message";
 
 export type { CompactionSettings };
 export type PiEngineOptions = {
@@ -19,6 +23,8 @@ export type PiEngineOptions = {
 	gate?: RequestGate;
 	/** Overrides for when long threads compact; tests shrink the thresholds. */
 	compaction?: CompactionSettings;
+	/** Both Members, so a Bot in a shared thread knows who is in it. */
+	members: readonly { id: string; name: string }[];
 	memory: Memory;
 	learned: LearnedNotes;
 	/** What a Bot may do with memory, as the Bot is defined now. */
@@ -28,7 +34,7 @@ export type PiEngineOptions = {
 };
 
 type Block = { type: string; text?: string };
-type Entry = { id: string; kind: string; model?: readonly { role: string; content: unknown }[] };
+type Entry = { id: string; kind: string; data?: unknown; model?: readonly { role: string; content: unknown }[] };
 
 function textOf(content: unknown): string {
 	if (typeof content === "string") return content;
@@ -44,7 +50,10 @@ function project(value: { entries: readonly Entry[]; docs: Readonly<Record<strin
 	const messages: ChatMessage[] = [];
 	for (const entry of value.entries) {
 		const message = entry.model?.[0];
-		if (entry.kind === "pi.user" && message?.role === "user") {
+		if (entry.kind === MESSAGE_KIND) {
+			const data = entry.data as { author?: string; text?: string } | undefined;
+			messages.push({ id: entry.id, role: "user", text: data?.text ?? textOf(message?.content), author: data?.author });
+		} else if (entry.kind === "pi.user" && message?.role === "user") {
 			messages.push({ id: entry.id, role: "user", text: textOf(message.content) });
 		} else if (entry.kind === "pi.assistant" && message?.role === "assistant") {
 			const text = textOf(message.content);
@@ -62,6 +71,7 @@ export async function openPiEngine(options: PiEngineOptions): Promise<ChatEngine
 	const memoryTools = memoryExtension(options.memory, options.learned, options.memoryAccess);
 	const registry = createRegistry();
 	registry.install(memoryTools);
+	registry.install(sharedThreadExtension(options.members));
 	// Refusals the gate gave, so a run that failed on one shows the Member its words rather than a generic error.
 	const refusals = new Set<string>();
 	const gate: RequestGate = async () => {
@@ -149,12 +159,23 @@ export async function openPiEngine(options: PiEngineOptions): Promise<ChatEngine
 
 		defaultModel: options.model.modelId,
 
-		async send(thread, text, requestId) {
+		async send(thread, text, requestId, author: Author, labelled) {
 			const target = await conversation(thread);
 			errors.delete(thread);
-			const submission = await target.submit({ type: "input", content: text, requestId }, context);
+			const submission = await target.submit(
+				{
+					type: "input",
+					content: labelled ? `${author.name}: ${text}` : text,
+					entry: { kind: MESSAGE_KIND, data: { author: author.id, text } },
+					requestId,
+				},
+				context,
+			);
 			void submission.wait(context).then(
 				(settled) => {
+					// With `afterFailedRun: "continue"` a message queued behind a failed run is still answered. An answer
+					// means the thread is not stuck, so an earlier message's error must not keep showing.
+					if (settled.status === "done") errors.delete(thread);
 					if (settled.status === "unanswered") {
 						const detail = typeof settled.detail === "string" ? settled.detail : undefined;
 						errors.set(thread, detail !== undefined && refusals.has(detail) ? detail : "The Bot could not answer. Try again.");
