@@ -1,6 +1,8 @@
 # Project tools. Secrets go in mise.local.toml, which git ignores.
 [tools]
 node = "24.22.2"
+# Browser automation for agents (see AGENTS.md). Pinned so the CLI and its bundled skill guides match.
+"npm:agent-browser" = "0.41.2"
 
 [tasks.install]
 description = "Install dependencies exactly as locked"

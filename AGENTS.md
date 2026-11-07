@@ -23,3 +23,7 @@ Default vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-
 ### Domain docs
 
 Single-context: one `GLOSSARY.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+## Browser testing
+
+Use `agent-browser` for browser automation. Before the first use, run `agent-browser skills get core` and follow it.
