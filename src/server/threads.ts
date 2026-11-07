@@ -1,8 +1,13 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { ChatEngine, ThreadId } from "./chat/engine.ts";
+import type { ChatEngine, ThreadId, ThreadSpec } from "./chat/engine.ts";
 import type { Member } from "./members.ts";
 import type { Bot, Bots } from "./bots.ts";
+
+/** What a thread needs to match a Bot's definition now. */
+export function specFor(bot: Bot, memberId: string | undefined): ThreadSpec {
+	return { instructions: bot.instructions, botId: bot.id, memberId, model: bot.model };
+}
 
 /**
  * Maps each Member and Bot to a main thread. Thread access lives here so every read and write passes through one
@@ -28,7 +33,7 @@ export class Threads {
 	}
 
 	/** The Bot and the main thread this Member may use with it (created on first use), or undefined if they may not. */
-	async mainThread(member: Member, botId: string): Promise<{ bot: Bot; thread: ThreadId } | undefined> {
+	async mainThread(member: Member, botId: string): Promise<{ bot: Bot; thread: ThreadId; memberId: string | undefined } | undefined> {
 		const bot = this.#bots.find(member, botId);
 		if (bot === undefined) return undefined;
 		const owner = bot.kind === "household" ? undefined : member.id;
@@ -42,15 +47,15 @@ export class Threads {
 				if (this.#pending.get(key) === pending) this.#pending.delete(key);
 			});
 		}
-		return { bot, thread: await pending };
+		return { bot, thread: await pending, memberId: owner };
 	}
 
 	async #resolve(key: string, bot: Bot, memberId: string | undefined): Promise<ThreadId> {
 		const index = await this.#load();
 		const existing = index[key];
 		if (existing !== undefined) return existing;
-		// The thread takes the Bot's instructions as they are now; editing the Bot file later does not change existing threads.
-		const id = await this.#engine.createThread({ instructions: bot.instructions, botId: bot.id, memberId });
+		// A new thread starts from the Bot as it is now; later edits reach it through `configure` before each message.
+		const id = await this.#engine.createThread(specFor(bot, memberId));
 		index[key] = id;
 		try {
 			await this.#save(index);

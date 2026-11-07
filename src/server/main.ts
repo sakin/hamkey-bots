@@ -15,7 +15,7 @@ if (!process.env.OPENROUTER_API_KEY) console.warn("OPENROUTER_API_KEY is not set
 await mkdir(config.dataDir, { recursive: true });
 const members = await loadMembers(config.dataDir);
 
-const bots = new Bots(await loadBots(config.dataDir, members), members);
+const bots = new Bots(await loadBots(config.dataDir, members), members, config.dataDir);
 
 const engine = await openOpenRouterEngine({
 	memory: new FileMemory(config.dataDir),
