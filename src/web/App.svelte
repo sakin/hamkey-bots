@@ -90,9 +90,12 @@
 <div class="mx-auto flex h-full max-w-2xl flex-col bg-white shadow-sm md:my-0 md:border-x md:border-gray-200">
 	<header class="flex items-center justify-between border-b border-gray-200 px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
 		<div>
-			<h1 class="text-base font-semibold">{bot?.name ?? "Hamkey"}</h1>
+			<h1 class="text-base font-semibold">
+				{bot?.name ?? "Hamkey"}
+				{#if bot?.shared}<span class="ml-1 rounded-full bg-emerald-100 px-2 py-0.5 align-middle text-xs font-medium text-emerald-800">Shared</span>{/if}
+			</h1>
 			{#if me && bot}<p class="text-xs text-gray-500">
-					{bot.kind === "household" ? "Shared with the household" : bot.kind === "common" ? `Private to ${me.member.name}, one Bot for both` : `Private to ${me.member.name}`}
+					{bot.shared ? "Shared thread: both of you write here" : bot.kind === "common" ? `Private to ${me.member.name}, one Bot for both` : `Private to ${me.member.name}`}
 				</p>{/if}
 		</div>
 		<div class="flex items-center gap-2">
@@ -128,7 +131,7 @@
 					class="shrink-0 rounded-full border px-3 py-1.5 text-sm {b.id === botId ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-300 text-gray-700'}"
 				>
 					{b.name}
-					<span class="text-xs opacity-70">{b.kind}</span>
+					<span class="text-xs opacity-70">{b.shared ? "shared" : b.kind}</span>
 				</button>
 			{/each}
 			<button
@@ -156,11 +159,16 @@
 				<p class="pt-8 text-center text-sm text-gray-400">Say hello to start the conversation.</p>
 			{/if}
 			{#each view.messages as message (message.id)}
-				<div class="flex {message.role === 'user' ? 'justify-end' : 'justify-start'}">
+				<!-- In a shared thread the other Member's messages are not mine, so the side follows the sender. -->
+				{@const mine = message.role === "user" && (message.sender === undefined || message.sender.id === me?.member.id)}
+				<div class="flex flex-col {mine ? 'items-end' : 'items-start'}">
+					{#if bot?.shared && message.sender}<span class="mb-0.5 px-1 text-xs text-gray-500">{message.sender.name}</span>{/if}
 					<p
-						class="max-w-[85%] whitespace-pre-wrap rounded-2xl px-3.5 py-2 text-sm leading-relaxed {message.role === 'user'
+						class="max-w-[85%] whitespace-pre-wrap rounded-2xl px-3.5 py-2 text-sm leading-relaxed {mine
 							? 'bg-gray-900 text-white'
-							: 'bg-gray-100 text-gray-900'}"
+							: message.role === 'user'
+								? 'bg-emerald-100 text-gray-900'
+								: 'bg-gray-100 text-gray-900'}"
 					>
 						{message.text}
 					</p>

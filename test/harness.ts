@@ -51,6 +51,7 @@ export async function startHamkey(options: { devIdentity?: string; webDir?: stri
 		provider: options.pricePerResponse === undefined ? faux.provider : pricedProvider(faux.provider, options.pricePerResponse),
 		gate: () => spend!.refusal(),
 		model: { provider: faux.getModel().provider, modelId: faux.getModel().id },
+		members: [ann, ben],
 		memory,
 		learned,
 		compaction: options.compaction,

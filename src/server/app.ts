@@ -6,7 +6,7 @@ import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { streamSSE } from "hono/streaming";
 import { type Bot, type BotKind, type BotInput, type Bots, InvalidBot } from "./bots.ts";
-import type { ChatEngine } from "./chat/engine.ts";
+import type { ChatEngine, ThreadView } from "./chat/engine.ts";
 import { BOT_TOOLS } from "./memory/access.ts";
 import { resolveMember } from "./identity.ts";
 import type { Member } from "./members.ts";
@@ -64,6 +64,8 @@ export function createApp(options: AppOptions): Server {
 		id: bot.id,
 		name: bot.name,
 		kind: bot.kind,
+		// A Household Bot's thread is one that both Members write in.
+		shared: bot.kind === "household",
 		editable: bots.isEditable(bot),
 		// Set while the Bot's file is broken and its last working version is in use.
 		warning: bots.hasProblem(bot.id) ? "This Bot's file has an error, so its last working version is in use." : undefined,
@@ -131,9 +133,19 @@ export function createApp(options: AppOptions): Server {
 		return bot === undefined ? notFound(c) : c.json(definition(bot));
 	});
 
+	/** Names each message's sender: a Member for the messages they wrote, the Bot for its replies. */
+	const present = (view: ThreadView, bot: Bot) => ({
+		...view,
+		messages: view.messages.map(({ author, ...m }) => {
+			const member = author === undefined ? undefined : options.members.find((x) => x.id === author);
+			const sender = m.role === "assistant" ? { id: bot.id, name: bot.name } : member && { id: member.id, name: member.name };
+			return { ...m, sender };
+		}),
+	});
+
 	api.get("/bots/:bot", async (c) => {
 		const found = await threads.mainThread(c.get("member"), c.req.param("bot"));
-		return found === undefined ? notFound(c) : c.json(await engine.view(found.thread));
+		return found === undefined ? notFound(c) : c.json(present(await engine.view(found.thread), found.bot));
 	});
 
 	api.post(
@@ -153,7 +165,7 @@ export function createApp(options: AppOptions): Server {
 			const requestId = typeof body.requestId === "string" && body.requestId !== "" ? `${member.id}:${body.requestId}` : randomUUID();
 			// The Bot may have been edited since this thread last ran; its next turn uses the current definition.
 			await engine.configure(found.thread, specFor(found.bot, found.memberId));
-			await engine.send(found.thread, text, requestId);
+			await engine.send(found.thread, text, requestId, { id: member.id, name: member.name }, found.memberId === undefined);
 			return c.json({ ok: true }, 202);
 		},
 	);
@@ -161,10 +173,10 @@ export function createApp(options: AppOptions): Server {
 	api.get("/bots/:bot/events", async (c) => {
 		const found = await threads.mainThread(c.get("member"), c.req.param("bot"));
 		if (found === undefined) return notFound(c);
-		const { thread } = found;
+		const { thread, bot } = found;
 		return streamSSE(c, async (stream) => {
 			const unsubscribe = await engine.subscribe(thread, (view) => {
-				void stream.writeSSE({ data: JSON.stringify(view) }).catch(() => {});
+				void stream.writeSSE({ data: JSON.stringify(present(view, bot)) }).catch(() => {});
 			});
 			const keepAlive = setInterval(() => void stream.write(": keep-alive\n\n").catch(() => {}), KEEP_ALIVE_MS);
 			const release = () => {
