@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { type Fact, type Memory, matches, type Scope, scopeKey } from "./memory.ts";
+import { type Fact, type Memory, type Scope, scopeKey, score } from "./memory.ts";
 
 /** Memory kept as one JSON file per scope under `<dataDir>/memory`, so the Operator can read or hand-edit it. */
 export class FileMemory implements Memory {
@@ -27,7 +27,12 @@ export class FileMemory implements Memory {
 	}
 
 	async search(scopes: readonly Scope[], query: string): Promise<Fact[]> {
-		return (await this.#all(scopes)).filter((f) => matches(f.text, query));
+		// Best fit first; facts that fit equally well stay newest first (the sort is stable).
+		return (await this.#all(scopes))
+			.map((fact) => ({ fact, fit: score(fact.text, query) }))
+			.filter((m) => m.fit > 0)
+			.sort((a, b) => b.fit - a.fit)
+			.map((m) => m.fact);
 	}
 
 	async forget(scopes: readonly Scope[], factId: string): Promise<boolean> {
