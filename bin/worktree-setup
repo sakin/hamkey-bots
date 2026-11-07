@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Prepare a fresh git worktree so it can run on its own. Safe to re-run. Works from any tool (Orca, worktrunk, by hand).
 #
-#   1. Copies the untracked local files a worktree lacks, from the main checkout, never overwriting.
+#   1. Copies the untracked local files (secrets, members, Bots) a worktree lacks, from the main checkout, never overwriting.
 #   2. Gives the worktree its own ports, derived from its branch name, written to .env.local.
 #   3. Installs dependencies if they are missing.
 #
+# Bots come from the main checkout's data/bots, or from examples/bots when it has none.
 # The conversation database is deliberately NOT copied: each worktree starts with its own data/.
 set -euo pipefail
 
@@ -30,6 +31,19 @@ copy_if_missing() { # <relative path> <mode>
 echo "worktree-setup: $top (main checkout: $main)"
 copy_if_missing mise.local.toml 600
 copy_if_missing data/members.json 644
+
+# Bots: take the main checkout's live Bots when it has any. Otherwise seed the Bots that belong to nobody in particular
+# from the examples (a personal example names a Member who may not exist here, so it is left out).
+if [ -d "$main/data/bots" ] && compgen -G "$main/data/bots/*.json" >/dev/null; then
+	for f in "$main"/data/bots/*.json; do copy_if_missing "data/bots/$(basename "$f")" 644; done
+elif [ ! -d data/bots ]; then
+	mkdir -p data/bots
+	for f in examples/bots/*.json; do
+		if grep -q '"kind": "personal"' "$f"; then continue; fi
+		cp "$f" "data/bots/$(basename "$f")"
+		echo "  seed   data/bots/$(basename "$f") (from examples)"
+	done
+fi
 
 # Two ports per worktree, from a hash of the branch name: the server on an even port, the web app on the next.
 # Same branch, same ports, every time. Two branches can collide in theory (1 in 5000); change the branch name if so.

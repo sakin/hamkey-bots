@@ -18,6 +18,7 @@ export async function loadMembers(dataDir: string): Promise<Member[]> {
 	if (!Array.isArray(members) || members.length !== 2) throw new Error("members.json must list exactly two Members.");
 	for (const m of members) {
 		if (!m.id || !m.name || !m.tailscaleLogin) throw new Error("Each Member needs id, name and tailscaleLogin.");
+		if (!/^[a-z0-9][a-z0-9-]*$/.test(m.id)) throw new Error(`Member id "${m.id}" must be lowercase letters, digits and dashes.`);
 	}
 	return members;
 }

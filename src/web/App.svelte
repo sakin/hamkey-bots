@@ -1,27 +1,46 @@
 <script lang="ts">
 	import { onMount, tick } from "svelte";
-	import { devMember, fetchMe, followThread, sendMessage, setDevMember, type Me, type ThreadView } from "./api.ts";
+	import { devMember, fetchBots, fetchMe, followThread, sendMessage, setDevMember, type BotSummary, type Me, type ThreadView } from "./api.ts";
 
 	let me = $state<Me | undefined>();
 	let refused = $state(false);
 	let view = $state<ThreadView>({ messages: [], busy: false });
+	let bots = $state<BotSummary[]>([]);
+	let botsFailed = $state(false);
+	let botId = $state<string | undefined>();
 	let online = $state(true);
 	let text = $state("");
 	let sending = $state(false);
 	let scroller: HTMLElement | undefined = $state();
 
+	const bot = $derived(bots.find((b) => b.id === botId));
+
 	async function load() {
 		me = await fetchMe();
 		refused = me === undefined;
+		if (refused) return;
+		const found = await fetchBots();
+		botsFailed = found === undefined;
+		bots = found ?? [];
+		botId = bots[0]?.id;
 	}
 
 	onMount(() => {
 		load();
-		const stop = followThread(
+	});
+
+	// Switching Bots follows that Bot's thread; the server keeps each one, so nothing is lost by leaving.
+	$effect(() => {
+		const id = botId;
+		if (id === undefined) return;
+		view = { messages: [], busy: false };
+		online = true;
+		text = "";
+		return followThread(
+			id,
 			(v) => (view = v),
 			(o) => (online = o),
 		);
-		return stop;
 	});
 
 	$effect(() => {
@@ -35,7 +54,7 @@
 		const message = text.trim();
 		if (!message || sending) return;
 		sending = true;
-		if (await sendMessage(message)) text = "";
+		if (botId !== undefined && (await sendMessage(botId, message))) text = "";
 		sending = false;
 	}
 
@@ -55,8 +74,10 @@
 <div class="mx-auto flex h-full max-w-2xl flex-col bg-white shadow-sm md:my-0 md:border-x md:border-gray-200">
 	<header class="flex items-center justify-between border-b border-gray-200 px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
 		<div>
-			<h1 class="text-base font-semibold">{me?.bot.name ?? "Hamkey"}</h1>
-			{#if me}<p class="text-xs text-gray-500">Private to {me.member.name}</p>{/if}
+			<h1 class="text-base font-semibold">{bot?.name ?? "Hamkey"}</h1>
+			{#if me && bot}<p class="text-xs text-gray-500">
+					{bot.kind === "household" ? "Shared with the household" : bot.kind === "common" ? `Private to ${me.member.name}, one Bot for both` : `Private to ${me.member.name}`}
+				</p>{/if}
 		</div>
 		<div class="flex items-center gap-2">
 			{#if !online}<span class="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">Reconnecting…</span>{/if}
@@ -68,7 +89,7 @@
 					onchange={(e) => pickDev(e.currentTarget.value)}
 				>
 					<option value="">default</option>
-					{#each ["ann", "ben"] as id}<option value={id}>{id}</option>{/each}
+					{#each me?.devMembers ?? [] as id}<option value={id}>{id}</option>{/each}
 				</select>
 			{/if}
 		</div>
@@ -79,6 +100,22 @@
 			<p>Hamkey doesn't recognise this device. Open it from a Tailscale account that belongs to the household.</p>
 		</main>
 	{:else}
+		<nav class="flex gap-2 overflow-x-auto border-b border-gray-200 px-3 py-2" aria-label="Bots">
+			{#each bots as b (b.id)}
+				<button
+					type="button"
+					onclick={() => (botId = b.id)}
+					aria-current={b.id === botId ? "true" : undefined}
+					class="shrink-0 rounded-full border px-3 py-1.5 text-sm {b.id === botId ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-300 text-gray-700'}"
+				>
+					{b.name}
+					<span class="text-xs opacity-70">{b.kind}</span>
+				</button>
+			{/each}
+		</nav>
+		{#if botsFailed}
+			<p class="px-4 py-2 text-center text-sm text-red-600" role="alert">Could not load your Bots. Reload to try again.</p>
+		{/if}
 		<main bind:this={scroller} class="flex-1 space-y-3 overflow-y-auto px-4 py-4" aria-live="polite">
 			{#if view.messages.length === 0 && !view.draft}
 				<p class="pt-8 text-center text-sm text-gray-400">Say hello to start the conversation.</p>
@@ -112,7 +149,7 @@
 				bind:value={text}
 				onkeydown={onKey}
 				rows="1"
-				placeholder="Message your Primary Bot"
+				placeholder={bot ? `Message ${bot.name}` : "Message"}
 				aria-label="Message"
 				class="max-h-40 min-h-11 flex-1 resize-none rounded-xl border border-gray-300 px-3 py-2.5 text-base focus:border-gray-900 focus:outline-none"
 			></textarea>

@@ -25,7 +25,7 @@ describe("identity", () => {
 	it("refuses an unknown identity and a request with none", async () => {
 		hamkey = await startHamkey();
 		const stranger = hamkey.asTailscale("mallory@example.com");
-		for (const path of ["/api/me", "/api/primary"]) expect((await stranger.get(path)).status).toBe(403);
+		for (const path of ["/api/me", "/api/bots", "/api/bots/primary-ann"]) expect((await stranger.get(path)).status).toBe(403);
 		expect((await stranger.send("hi")).status).toBe(403);
 		expect((await hamkey.as({}).get("/api/me")).status).toBe(403);
 	});
@@ -41,12 +41,14 @@ describe("identity", () => {
 		expect((await (await none.get("/api/me")).json()).member.id).toBe("ann");
 		const asBen = hamkey.as({ "x-hamkey-dev-member": "ben" });
 		expect((await (await asBen.get("/api/me")).json()).member.id).toBe("ben");
+		expect((await (await none.get("/api/me")).json()).devMembers).toEqual(["ann", "ben"]);
 		expect((await hamkey.as({ "x-hamkey-dev-member": "eve" }).get("/api/me")).status).toBe(403);
 	});
 
 	it("ignores the development header when no development identity is set", async () => {
 		hamkey = await startHamkey();
 		expect((await hamkey.as({ "x-hamkey-dev-member": "ann" }).get("/api/me")).status).toBe(403);
+		expect((await (await hamkey.ann.get("/api/me")).json()).devMembers).toBeUndefined();
 	});
 
 	it("refuses to start with a development identity in production", () => {
@@ -71,7 +73,7 @@ describe("chatting with a Primary Bot", () => {
 		]);
 		// The reply arrived through committed views, and the thread ends idle.
 		expect(views.length).toBeGreaterThan(2);
-		expect((await (await hamkey.ann.get("/api/primary")).json()).busy).toBe(false);
+		expect((await (await hamkey.ann.get("/api/bots/primary-ann")).json()).busy).toBe(false);
 	});
 
 	it("keeps each Member's conversation to themselves", async () => {
@@ -81,7 +83,7 @@ describe("chatting with a Primary Bot", () => {
 		await live.ready;
 		await hamkey.ann.send("A secret only Ann knows");
 		await live;
-		const ben = await (await hamkey.ben.get("/api/primary")).json();
+		const ben = await (await hamkey.ben.get("/api/bots/primary-ben")).json();
 		expect(ben.messages).toEqual([]);
 		expect(JSON.stringify(ben)).not.toContain("secret");
 	});
@@ -93,7 +95,7 @@ describe("chatting with a Primary Bot", () => {
 		await live.ready;
 		await hamkey.ben.send("Ben's private note");
 		expect((await live).at(-1)!.messages.map((m) => m.text)).toEqual(["Ben's private note", "Hi Ben."]);
-		const ann = await (await hamkey.ann.get("/api/primary")).json();
+		const ann = await (await hamkey.ann.get("/api/bots/primary-ann")).json();
 		expect(JSON.stringify(ann)).not.toContain("private");
 	});
 
@@ -126,7 +128,7 @@ describe("chatting with a Primary Bot", () => {
 describe("data folder", () => {
 	it("keeps application data in the configured folder", async () => {
 		hamkey = await startHamkey();
-		await hamkey.ann.get("/api/primary");
+		await hamkey.ann.get("/api/bots/primary-ann");
 		expect(existsSync(join(hamkey.dataDir, "hamkey.sqlite"))).toBe(true);
 		expect(existsSync(join(hamkey.dataDir, "threads.json"))).toBe(true);
 	});
@@ -146,7 +148,7 @@ describe("routing", () => {
 
 	it("rejects invalid JSON and oversized messages", async () => {
 		hamkey = await startHamkey();
-		const invalid = await fetch(`http://127.0.0.1:${hamkey.port}/api/primary/messages`, {
+		const invalid = await fetch(`http://127.0.0.1:${hamkey.port}/api/bots/primary-ann/messages`, {
 			method: "POST",
 			headers: { "tailscale-user-login": "ann@example.com", "content-type": "application/json" },
 			body: "{nope",
@@ -158,13 +160,13 @@ describe("routing", () => {
 	it("keeps serving after a client drops its stream", async () => {
 		hamkey = await startHamkey();
 		const controller = new AbortController();
-		const response = await fetch(`http://127.0.0.1:${hamkey.port}/api/primary/events`, {
+		const response = await fetch(`http://127.0.0.1:${hamkey.port}/api/bots/primary-ann/events`, {
 			headers: { "tailscale-user-login": "ann@example.com" },
 			signal: controller.signal,
 		});
 		await response.body!.getReader().read();
 		controller.abort();
-		expect((await hamkey.ann.get("/api/primary")).status).toBe(200);
+		expect((await hamkey.ann.get("/api/bots/primary-ann")).status).toBe(200);
 		// A later stream still works and replies reach it.
 		hamkey.faux.setResponses([fauxAssistantMessage([fauxText("Still here.")])]);
 		const live = hamkey.ann.stream((v) => v.messages.some((m) => m.role === "assistant"));

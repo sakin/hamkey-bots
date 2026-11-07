@@ -28,6 +28,10 @@ _Avoid_: Main bot, personal assistant
 Whichever Bot is coordinating delegated work on a request. This is a temporary role, and need not be a Primary Bot.
 _Avoid_: Primary Bot, when the coordinating role is meant
 
+**Personal Bot**:
+A Bot that belongs to one Member and that only they can use. Each Member's Primary Bot is one.
+_Avoid_: Private bot
+
 **Household Bot**:
 A Bot that belongs to the household rather than to one Member. Both Members use it.
 _Avoid_: Shared bot

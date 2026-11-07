@@ -1,6 +1,7 @@
 export type ChatMessage = { id: string; role: "user" | "assistant"; text: string };
 export type ThreadView = { messages: ChatMessage[]; draft?: string; busy: boolean; error?: string };
-export type Me = { member: { id: string; name: string }; bot: { name: string } };
+export type Me = { member: { id: string; name: string }; devMembers?: string[] };
+export type BotSummary = { id: string; name: string; kind: "personal" | "household" | "common" };
 
 /** Development only: pick which Member to act as when the server runs with a development identity. */
 const DEV_KEY = "hamkey.devMember";
@@ -28,19 +29,29 @@ export async function fetchMe(): Promise<Me | undefined> {
 	return res.ok ? res.json() : undefined;
 }
 
+export async function fetchBots(): Promise<BotSummary[] | undefined> {
+	try {
+		const res = await fetch("/api/bots", { headers: headers() });
+		return res.ok ? (await res.json()).bots : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
 // A retry of a send that failed reuses its request id, so the server can tell it is the same message (and a send that
 // did arrive but whose reply was lost is not delivered twice).
-let attempt: { text: string; requestId: string } | undefined;
+const attempts = new Map<string, { text: string; requestId: string }>();
 
-export async function sendMessage(text: string): Promise<boolean> {
-	if (attempt?.text !== text) attempt = { text, requestId: crypto.randomUUID() };
+export async function sendMessage(botId: string, text: string): Promise<boolean> {
+	let attempt = attempts.get(botId);
+	if (attempt?.text !== text) attempts.set(botId, (attempt = { text, requestId: crypto.randomUUID() }));
 	try {
-		const res = await fetch("/api/primary/messages", {
+		const res = await fetch(`/api/bots/${encodeURIComponent(botId)}/messages`, {
 			method: "POST",
 			headers: { ...headers(), "content-type": "application/json" },
 			body: JSON.stringify({ text, requestId: attempt.requestId }),
 		});
-		if (res.ok) attempt = undefined;
+		if (res.ok) attempts.delete(botId);
 		return res.ok;
 	} catch {
 		return false;
@@ -51,15 +62,16 @@ export async function sendMessage(text: string): Promise<boolean> {
  * Follow the thread live. EventSource cannot set headers, so the stream is read with fetch. Reconnects after a drop;
  * each frame is the full committed view, so a reconnect needs no replay.
  */
-export function followThread(onView: (view: ThreadView) => void, onState: (online: boolean) => void): () => void {
+export function followThread(botId: string, onView: (view: ThreadView) => void, onState: (online: boolean) => void): () => void {
 	let stopped = false;
 	let controller: AbortController | undefined;
 	(async () => {
 		while (!stopped) {
 			controller = new AbortController();
 			try {
-				const res = await fetch("/api/primary/events", { headers: headers(), signal: controller.signal });
+				const res = await fetch(`/api/bots/${encodeURIComponent(botId)}/events`, { headers: headers(), signal: controller.signal });
 				if (!res.ok || !res.body) throw new Error(String(res.status));
+				if (stopped) return;
 				onState(true);
 				const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
 				let buffer = "";
@@ -71,14 +83,15 @@ export function followThread(onView: (view: ThreadView) => void, onState: (onlin
 					while ((end = buffer.indexOf("\n\n")) !== -1) {
 						const frame = buffer.slice(0, end);
 						buffer = buffer.slice(end + 2);
-						if (frame.startsWith("data: ")) onView(JSON.parse(frame.slice(6)));
+						if (!stopped && frame.startsWith("data: ")) onView(JSON.parse(frame.slice(6)));
 					}
 				}
 			} catch {
 				/* fall through to retry */
 			}
+			if (stopped) return;
 			onState(false);
-			if (!stopped) await new Promise((r) => setTimeout(r, 1500));
+			await new Promise((r) => setTimeout(r, 1500));
 		}
 	})();
 	return () => {

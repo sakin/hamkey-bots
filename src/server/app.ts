@@ -2,18 +2,19 @@ import { randomUUID } from "node:crypto";
 import type { Server } from "node:http";
 import { createAdaptorServer } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { streamSSE } from "hono/streaming";
+import type { Bots } from "./bots.ts";
 import type { ChatEngine } from "./chat/engine.ts";
 import { resolveMember } from "./identity.ts";
 import type { Member } from "./members.ts";
-import { primaryBotFor } from "./primary-bot.ts";
 import { Threads } from "./threads.ts";
 
 export type AppOptions = {
 	members: readonly Member[];
 	engine: ChatEngine;
+	bots: Bots;
 	threads: Threads;
 	devIdentity?: string;
 	webDir?: string;
@@ -26,7 +27,7 @@ const KEEP_ALIVE_MS = 25_000;
 
 /** Builds the HTTP server. It does not listen; `listenLocal` does, and only on the loopback interface. */
 export function createApp(options: AppOptions): Server {
-	const { engine, threads } = options;
+	const { engine, threads, bots } = options;
 
 	const api = new Hono<Env>();
 
@@ -40,27 +41,43 @@ export function createApp(options: AppOptions): Server {
 
 	api.get("/me", (c) => {
 		const member = c.get("member");
-		return c.json({ member: { id: member.id, name: member.name }, bot: { name: primaryBotFor(member).name } });
+		// The development Member switcher needs the Member ids; they are offered only when a development identity is set.
+		const devMembers = options.devIdentity === undefined ? undefined : options.members.map((m) => m.id);
+		return c.json({ member: { id: member.id, name: member.name }, devMembers });
 	});
 
-	api.get("/primary", async (c) => c.json(await engine.view(await threads.primaryThreadFor(c.get("member")))));
+	api.get("/bots", (c) =>
+		c.json({ bots: bots.listFor(c.get("member")).map(({ id, name, kind }) => ({ id, name, kind })) }),
+	);
+
+	// A Bot the Member may not use answers exactly like one that does not exist.
+	const notFound = (c: Context) => c.json({ error: "Not found" }, 404);
+
+	api.get("/bots/:bot", async (c) => {
+		const found = await threads.mainThread(c.get("member"), c.req.param("bot"));
+		return found === undefined ? notFound(c) : c.json(await engine.view(found.thread));
+	});
 
 	api.post(
-		"/primary/messages",
+		"/bots/:bot/messages",
 		bodyLimit({ maxSize: MAX_BODY, onError: (c) => c.json({ error: "Message too large" }, 413) }),
 		async (c) => {
 			const member = c.get("member");
+			const found = await threads.mainThread(member, c.req.param("bot"));
+			if (found === undefined) return notFound(c);
 			const body = await c.req.json().catch(() => undefined);
 			const text = typeof body?.text === "string" ? body.text.trim() : "";
 			if (text === "") return c.json({ error: "Message text is required" }, 400);
 			const requestId = typeof body.requestId === "string" && body.requestId !== "" ? `${member.id}:${body.requestId}` : randomUUID();
-			await engine.send(await threads.primaryThreadFor(member), text, requestId);
+			await engine.send(found.thread, text, requestId);
 			return c.json({ ok: true }, 202);
 		},
 	);
 
-	api.get("/primary/events", async (c) => {
-		const thread = await threads.primaryThreadFor(c.get("member"));
+	api.get("/bots/:bot/events", async (c) => {
+		const found = await threads.mainThread(c.get("member"), c.req.param("bot"));
+		if (found === undefined) return notFound(c);
+		const { thread } = found;
 		return streamSSE(c, async (stream) => {
 			const unsubscribe = await engine.subscribe(thread, (view) => {
 				void stream.writeSSE({ data: JSON.stringify(view) }).catch(() => {});
