@@ -1,5 +1,6 @@
 import { createModels } from "@earendil-works/pi-ai";
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
+import type { LearnedNotes } from "../memory/learned-notes.ts";
 import type { Memory } from "../memory/memory.ts";
 import type { ChatEngine } from "./engine.ts";
 import type { AccessResolver } from "./memory-tools.ts";
@@ -13,6 +14,7 @@ export function openOpenRouterEngine(options: {
 	storagePath: string;
 	modelId: string;
 	memory: Memory;
+	learned: LearnedNotes;
 	memoryAccess: AccessResolver;
 	onFailure?: (error: unknown) => void;
 }): Promise<ChatEngine> {
@@ -23,6 +25,7 @@ export function openOpenRouterEngine(options: {
 		models,
 		model: { provider: "openrouter", modelId: options.modelId },
 		memory: options.memory,
+		learned: options.learned,
 		memoryAccess: options.memoryAccess,
 		onFailure: options.onFailure,
 	});

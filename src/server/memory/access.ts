@@ -1,8 +1,8 @@
 import type { Bot } from "../bots.ts";
 import type { Scope } from "./memory.ts";
 
-export const MEMORY_TOOLS = ["memory_save", "memory_search", "memory_forget"] as const;
-export type MemoryToolName = (typeof MEMORY_TOOLS)[number];
+export const BOT_TOOLS = ["memory_save", "memory_search", "memory_forget", "learned_update"] as const;
+export type BotToolName = (typeof BOT_TOOLS)[number];
 
 /** What a Bot may do with memory in one conversation. Built on the server from the Bot and Member, never from the model. */
 export type MemoryAccess = {
@@ -19,7 +19,7 @@ export type MemoryAccess = {
  * Member separately, so it reads only its own notes for that Member.
  */
 export function accessFor(bot: Bot, memberId: string | undefined): MemoryAccess | undefined {
-	const tools = bot.tools ?? [...MEMORY_TOOLS];
+	const tools = bot.tools ?? [...BOT_TOOLS];
 	switch (bot.kind) {
 		case "household":
 			return {

@@ -1,6 +1,7 @@
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
 import type { Models } from "@earendil-works/pi-ai";
 import { type CompactionSettings, createRegistry, Harness } from "@earendil-works/pi-durable";
+import type { LearnedNotes } from "../memory/learned-notes.ts";
 import type { Memory } from "../memory/memory.ts";
 import { type AccessResolver, BindingDoc, memoryExtension } from "./memory-tools.ts";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
@@ -15,6 +16,7 @@ export type PiEngineOptions = {
 	/** Overrides for when long threads compact; tests shrink the thresholds. */
 	compaction?: CompactionSettings;
 	memory: Memory;
+	learned: LearnedNotes;
 	/** What a Bot may do with memory, as the Bot is defined now. */
 	memoryAccess: AccessResolver;
 	/** Called once if the store fails and the runtime shuts itself down; the process should exit so it is restarted. */
@@ -53,7 +55,7 @@ function project(value: { entries: readonly Entry[]; docs: Readonly<Record<strin
 }
 
 export async function openPiEngine(options: PiEngineOptions): Promise<ChatEngine> {
-	const memoryTools = memoryExtension(options.memory, options.memoryAccess);
+	const memoryTools = memoryExtension(options.memory, options.learned, options.memoryAccess);
 	const registry = createRegistry();
 	registry.install(memoryTools);
 	const harness = await Harness.open(

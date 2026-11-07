@@ -58,6 +58,10 @@ _Avoid_: Note, entry
 Where a Fact lives: the household, one Member, or one Bot (for a Common Bot, one Bot for one Member). A Bot's reach is set by its kind, never by what the model asks for.
 _Avoid_: Namespace, bucket
 
+**Learned notes**:
+A Bot's own `learned.md`, which it rewrites freely to improve its habits. It is the only part of a Bot that the Bot itself changes.
+_Avoid_: Self-edit, prompt
+
 ### Privacy
 
 **Ask**:

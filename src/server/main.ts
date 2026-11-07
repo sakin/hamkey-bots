@@ -4,6 +4,7 @@ import { Bots, loadBots } from "./bots.ts";
 import { createApp, listenLocal } from "./app.ts";
 import { openOpenRouterEngine } from "./chat/openrouter.ts";
 import { loadConfig } from "./config.ts";
+import { LearnedNotes } from "./memory/learned-notes.ts";
 import { FileMemory } from "./memory/file-memory.ts";
 import { loadMembers } from "./members.ts";
 import { Threads } from "./threads.ts";
@@ -18,6 +19,7 @@ const bots = new Bots(await loadBots(config.dataDir, members), members);
 
 const engine = await openOpenRouterEngine({
 	memory: new FileMemory(config.dataDir),
+	learned: new LearnedNotes(config.dataDir),
 	memoryAccess: (binding) => bots.memoryAccess(binding),
 	storagePath: join(config.dataDir, "hamkey.sqlite"),
 	modelId: config.model.modelId,
