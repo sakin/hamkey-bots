@@ -46,7 +46,8 @@ export async function fetchBots(): Promise<BotSummary[] | undefined> {
 // did arrive but whose reply was lost is not delivered twice).
 const attempts = new Map<string, { text: string; requestId: string }>();
 
-export async function sendMessage(botId: string, text: string): Promise<boolean> {
+/** Sends a message. Undefined means it was accepted; otherwise the reason it was not, to show the Member. */
+export async function sendMessage(botId: string, text: string): Promise<string | undefined> {
 	let attempt = attempts.get(botId);
 	if (attempt?.text !== text) attempts.set(botId, (attempt = { text, requestId: crypto.randomUUID() }));
 	try {
@@ -55,10 +56,14 @@ export async function sendMessage(botId: string, text: string): Promise<boolean>
 			headers: { ...headers(), "content-type": "application/json" },
 			body: JSON.stringify({ text, requestId: attempt.requestId }),
 		});
-		if (res.ok) attempts.delete(botId);
-		return res.ok;
+		if (res.ok) {
+			attempts.delete(botId);
+			return undefined;
+		}
+		const body = await res.json().catch(() => ({}));
+		return typeof body.error === "string" ? body.error : "Could not send. Try again.";
 	} catch {
-		return false;
+		return "Could not reach the server. Try again.";
 	}
 }
 

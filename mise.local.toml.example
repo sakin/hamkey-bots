@@ -9,5 +9,7 @@ HAMKEY_DEV_IDENTITY = "ann"
 #   [{"id":"ann","name":"Ann","tailscaleLogin":"ann@example.com"},{"id":"ben","name":"Ben","tailscaleLogin":"ben@example.com"}]
 # HAMKEY_DATA_DIR = "data"
 # HAMKEY_MODEL = "deepseek/deepseek-v4.1-flash"
+# Optional: the most Bots may spend on models in one day, in US dollars (default 1). 0 refuses all model work.
+# HAMKEY_DAILY_LIMIT_USD = "1"
 
 # Ports for parallel worktrees are generated into .env.local by bin/worktree-setup (PORT, HAMKEY_WEB_PORT).

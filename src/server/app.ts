@@ -10,6 +10,7 @@ import type { ChatEngine } from "./chat/engine.ts";
 import { BOT_TOOLS } from "./memory/access.ts";
 import { resolveMember } from "./identity.ts";
 import type { Member } from "./members.ts";
+import type { DailySpend } from "./spend.ts";
 import { specFor, Threads } from "./threads.ts";
 
 export type AppOptions = {
@@ -17,6 +18,8 @@ export type AppOptions = {
 	engine: ChatEngine;
 	bots: Bots;
 	threads: Threads;
+	/** The daily spend limit; new messages are refused once it is reached. */
+	spend: DailySpend;
 	devIdentity?: string;
 	webDir?: string;
 };
@@ -143,6 +146,10 @@ export function createApp(options: AppOptions): Server {
 			const body = await c.req.json().catch(() => undefined);
 			const text = typeof body?.text === "string" ? body.text.trim() : "";
 			if (text === "") return c.json({ error: "Message text is required" }, 400);
+			// Refused before it is queued, so the Member keeps their text and sees why. Work already running is stopped by
+			// the same limit before its next model request.
+			const refusal = await options.spend.refusal();
+			if (refusal !== undefined) return c.json({ error: refusal }, 429);
 			const requestId = typeof body.requestId === "string" && body.requestId !== "" ? `${member.id}:${body.requestId}` : randomUUID();
 			// The Bot may have been edited since this thread last ran; its next turn uses the current definition.
 			await engine.configure(found.thread, specFor(found.bot, found.memberId));

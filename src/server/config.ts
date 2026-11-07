@@ -8,11 +8,25 @@ export type Config = {
 	/** Development only: the Member id every request is treated as, unless the request names another. */
 	devIdentity?: string;
 	model: { provider: string; modelId: string };
+	/** Most US dollars Bots may spend on models in one day (the server's local day). Zero refuses all model work. */
+	dailyLimitUsd: number;
 	/** Directory of the built web app; absent in tests. */
 	webDir?: string;
 };
 
+/** The model a Bot uses when it names none. Chosen in ADR 0007. */
 export const DEFAULT_MODEL = "deepseek/deepseek-v4.1-flash";
+/** The daily spend limit when the Operator sets none, in US dollars (ADR 0007). */
+export const DEFAULT_DAILY_LIMIT_USD = 1;
+
+function dailyLimit(raw: string | undefined): number {
+	if (raw === undefined || raw.trim() === "") return DEFAULT_DAILY_LIMIT_USD;
+	const limit = Number(raw);
+	if (!Number.isFinite(limit) || limit < 0) {
+		throw new Error(`HAMKEY_DAILY_LIMIT_USD must be a number of US dollars, 0 or more; got "${raw}".`);
+	}
+	return limit;
+}
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 	const production = env.NODE_ENV === "production";
@@ -29,6 +43,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 		production,
 		devIdentity,
 		model: { provider: "openrouter", modelId: env.HAMKEY_MODEL || DEFAULT_MODEL },
+		dailyLimitUsd: dailyLimit(env.HAMKEY_DAILY_LIMIT_USD),
 		webDir: resolve(env.HAMKEY_WEB_DIR ?? "dist/web"),
 	};
 }

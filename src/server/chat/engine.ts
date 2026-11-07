@@ -22,6 +22,12 @@ export type ThreadSpec = { instructions: string; botId: string; memberId?: strin
 
 export type ModelInfo = { id: string; name: string };
 
+/**
+ * Asked before every model request. A string refuses the request; it is shown to the Member as is, so it must be
+ * plain words. Undefined lets the request go ahead.
+ */
+export type RequestGate = () => Promise<string | undefined>;
+
 export interface ChatEngine {
 	createThread(spec: ThreadSpec): Promise<ThreadId>;
 	/** Brings an existing thread up to date with its Bot's definition. Takes effect from the thread's next model request. */
@@ -34,5 +40,7 @@ export interface ChatEngine {
 	view(thread: ThreadId): Promise<ThreadView>;
 	/** Calls `listener` with the current view, then after every commit. Returns an unsubscribe function. */
 	subscribe(thread: ThreadId, listener: (view: ThreadView) => void): Promise<() => void>;
+	/** US dollars spent on models and tools across every thread since the store began, failed and aborted attempts included. */
+	totalSpend(): Promise<number>;
 	close(): Promise<void>;
 }
