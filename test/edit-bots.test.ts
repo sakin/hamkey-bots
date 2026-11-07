@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fauxAssistantMessage, fauxText } from "@earendil-works/pi-ai";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { type Hamkey, startHamkey } from "./harness.ts";
 import { say } from "./say.ts";
 
@@ -53,7 +53,8 @@ describe("creating a Bot", () => {
 		await create(hamkey.ann, gardener);
 		const again = await (await create(hamkey.ben, { ...gardener, kind: "household" })).json();
 		expect(again.id).toBe("garden-helper-2");
-		expect((await (await create(hamkey.ann, { ...gardener, name: "Primary Bot" })).json()).id).toBe("primary-bot");
+		// A name that would make the id of a built-in Bot gets its own id instead.
+		expect((await (await create(hamkey.ann, { ...gardener, name: "Primary-ann" })).json()).id).toBe("primary-ann-2");
 	});
 
 	it("sets the model and tools, and takes the model list from the catalog", async () => {
@@ -65,6 +66,14 @@ describe("creating a Bot", () => {
 		expect(made).toMatchObject({ model, tools: ["memory_search"] });
 		expect((await create(hamkey.ann, { ...gardener, name: "Other", model: "not/a-model" })).status).toBe(400);
 		expect((await create(hamkey.ann, { ...gardener, name: "Other", tools: ["bash"] })).status).toBe(400);
+	});
+
+	it("refuses a name that is reserved or has no letters", async () => {
+		hamkey = await startHamkey();
+		expect((await create(hamkey.ann, { ...gardener, name: "Primary Bot" })).status).toBe(400);
+		expect((await create(hamkey.ann, { ...gardener, name: " primary bot " })).status).toBe(400);
+		expect((await create(hamkey.ann, { ...gardener, name: "!!!" })).status).toBe(400);
+		expect((await create(hamkey.ann, { ...gardener, name: "Café 2" })).status).toBe(201);
 	});
 
 	it("refuses missing fields and a bad kind", async () => {
@@ -147,9 +156,24 @@ describe("hand edits to a Bot's file", () => {
 		expect(await ids(hamkey.ben)).toContain("hand-made");
 	});
 
-	it("keep the last good Bot when a file is broken", async () => {
+	it("keep the last good Bot when a file is broken, in its place, with a warning and one log line", async () => {
 		hamkey = await startHamkey();
-		await writeFile(join(hamkey.dataDir, "bots", "meal-planner.json"), "{ not json");
-		expect(await ids(hamkey.ann)).toContain("meal-planner");
+		const before = await ids(hamkey.ann);
+		const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			await writeFile(join(hamkey.dataDir, "bots", "meal-planner.json"), "{ not json");
+			for (let i = 0; i < 3; i++) expect(await ids(hamkey.ann)).toEqual(before);
+			const list = (await (await hamkey.ann.get("/api/bots")).json()).bots;
+			expect(list.find((b: { id: string }) => b.id === "meal-planner").warning).toMatch(/error/);
+			expect(list.find((b: { id: string }) => b.id === "research").warning).toBeUndefined();
+			expect(logged).toHaveBeenCalledTimes(1);
+			// Fixing the file clears the warning.
+			await writeFile(join(hamkey.dataDir, "bots", "meal-planner.json"), json({ id: "meal-planner", name: "Meals", kind: "household", instructions: "Plan." }));
+			const fixed = (await (await hamkey.ann.get("/api/bots")).json()).bots.find((b: { id: string }) => b.id === "meal-planner");
+			expect(fixed).toMatchObject({ name: "Meals" });
+			expect(fixed.warning).toBeUndefined();
+		} finally {
+			logged.mockRestore();
+		}
 	});
 });

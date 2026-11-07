@@ -67,6 +67,8 @@ export async function loadBots(dataDir: string, members: readonly Member[]): Pro
 export function checkInput(b: Partial<BotInput>): string | undefined {
 	if (typeof b.name !== "string" || b.name.trim() === "") return "name is required";
 	if (b.name.length > 80) return "name is too long";
+	if (!/[\p{L}\p{N}]/u.test(b.name)) return "name needs at least one letter or digit";
+	if (b.name.trim().toLowerCase() === "primary bot") return "that name is reserved for each Member's Primary Bot";
 	if (typeof b.instructions !== "string" || b.instructions.trim() === "") return "instructions are required";
 	if (b.instructions.length > 20_000) return "instructions are too long";
 	if (b.model !== undefined && (typeof b.model !== "string" || b.model === "" || b.model.length > 200)) return "model must be a model id";
@@ -101,6 +103,8 @@ function validate(raw: unknown, file: string, members: readonly Member[]): Bot {
 /** Every Bot a Member may use, and the one rule for who may use what. Bots can be created and edited while running. */
 export class Bots {
 	#bots: readonly Bot[];
+	/** Bot id to what is wrong with its file right now. */
+	#problems = new Map<string, string>();
 	readonly #primary: readonly Bot[];
 	readonly #members: readonly Member[];
 	readonly #dataDir: string | undefined;
@@ -195,16 +199,32 @@ export class Bots {
 
 	async #refresh(): Promise<void> {
 		const { bots, errors } = await readBots(this.#dataDir!, this.#members);
-		for (const [id, error] of errors) {
-			console.error(error.message);
-			const previous = this.#bots.find((b) => b.id === id && !this.#primary.includes(b));
+		const before = this.#bots;
+		for (const id of errors.keys()) {
+			const previous = before.find((b) => b.id === id && !this.#primary.includes(b));
 			if (previous !== undefined) bots.push(previous);
 		}
+		// Say what is wrong once, not on every request, and again only if the problem changes.
+		for (const [id, error] of errors) {
+			if (this.#problems.get(id) !== error.message) console.error(error.message);
+		}
+		this.#problems = new Map([...errors].map(([id, error]) => [id, error.message]));
+		// A Bot keeps its place in the list even while its file is broken.
+		const place = (b: Bot) => {
+			const at = before.findIndex((x) => x.id === b.id);
+			return at === -1 ? Infinity : at;
+		};
+		bots.sort((x, y) => place(x) - place(y));
 		try {
 			this.#bots = Bots.#join(this.#primary, bots);
 		} catch (error) {
 			console.error((error as Error).message);
 		}
+	}
+
+	/** Whether a Bot's file is currently broken, so the last working definition is in use. */
+	hasProblem(botId: string): boolean {
+		return this.#problems.has(botId);
 	}
 
 	async #save(bot: Bot): Promise<void> {

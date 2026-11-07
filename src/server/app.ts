@@ -57,7 +57,14 @@ export function createApp(options: AppOptions): Server {
 		await next();
 	});
 
-	const summary = (bot: Bot) => ({ id: bot.id, name: bot.name, kind: bot.kind, editable: bots.isEditable(bot) });
+	const summary = (bot: Bot) => ({
+		id: bot.id,
+		name: bot.name,
+		kind: bot.kind,
+		editable: bots.isEditable(bot),
+		// Set while the Bot's file is broken and its last working version is in use.
+		warning: bots.hasProblem(bot.id) ? "This Bot's file has an error, so its last working version is in use." : undefined,
+	});
 	const definition = (bot: Bot) => ({
 		...summary(bot),
 		instructions: bot.instructions,

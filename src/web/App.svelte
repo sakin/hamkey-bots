@@ -134,6 +134,9 @@
 				+ New
 			</button>
 		</nav>
+		{#if bot?.warning}
+			<p class="bg-amber-50 px-4 py-2 text-center text-sm text-amber-800" role="status">{bot.warning}</p>
+		{/if}
 		{#if botsFailed}
 			<p class="px-4 py-2 text-center text-sm text-red-600" role="alert">Could not load your Bots. Reload to try again.</p>
 		{/if}
