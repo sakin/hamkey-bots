@@ -1,8 +1,7 @@
-import { createModels } from "@earendil-works/pi-ai";
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import type { LearnedNotes } from "../memory/learned-notes.ts";
 import type { Memory } from "../memory/memory.ts";
-import type { ChatEngine } from "./engine.ts";
+import type { ChatEngine, RequestGate } from "./engine.ts";
 import type { AccessResolver } from "./memory-tools.ts";
 import { openPiEngine } from "./pi-engine.ts";
 
@@ -16,13 +15,13 @@ export function openOpenRouterEngine(options: {
 	memory: Memory;
 	learned: LearnedNotes;
 	memoryAccess: AccessResolver;
+	gate?: RequestGate;
 	onFailure?: (error: unknown) => void;
 }): Promise<ChatEngine> {
-	const models = createModels();
-	models.setProvider(openrouterProvider());
 	return openPiEngine({
 		storagePath: options.storagePath,
-		models,
+		provider: openrouterProvider(),
+		gate: options.gate,
 		model: { provider: "openrouter", modelId: options.modelId },
 		memory: options.memory,
 		learned: options.learned,

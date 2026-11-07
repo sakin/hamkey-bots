@@ -12,6 +12,8 @@
 	let online = $state(true);
 	let text = $state("");
 	let sending = $state(false);
+	/** Why the last message could not be sent, such as the daily spend limit. */
+	let sendError = $state<string | undefined>();
 	/** What the form is doing: nothing, creating a Bot, or editing the current one. */
 	let editing = $state<"create" | "edit" | undefined>();
 	let scroller: HTMLElement | undefined = $state();
@@ -46,6 +48,7 @@
 		view = { messages: [], busy: false };
 		online = true;
 		text = "";
+		sendError = undefined;
 		return followThread(
 			id,
 			(v) => (view = v),
@@ -64,7 +67,10 @@
 		const message = text.trim();
 		if (!message || sending) return;
 		sending = true;
-		if (botId !== undefined && (await sendMessage(botId, message))) text = "";
+		if (botId !== undefined) {
+			sendError = await sendMessage(botId, message);
+			if (sendError === undefined) text = "";
+		}
 		sending = false;
 	}
 
@@ -168,6 +174,7 @@
 				</div>
 			{/if}
 			{#if view.error}<p class="text-center text-sm text-red-600" role="alert">{view.error}</p>{/if}
+			{#if sendError}<p class="text-center text-sm text-red-600" role="alert">{sendError}</p>{/if}
 		</main>
 
 		<form

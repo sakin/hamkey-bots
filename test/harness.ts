@@ -1,7 +1,7 @@
 import { cp, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createModels, fauxProvider } from "@earendil-works/pi-ai";
+import { fauxProvider } from "@earendil-works/pi-ai";
 import { createApp, listenLocal } from "../src/server/app.ts";
 import { openPiEngine } from "../src/server/chat/pi-engine.ts";
 import type { ThreadView } from "../src/server/chat/engine.ts";
@@ -11,7 +11,9 @@ import { Bots, loadBots } from "../src/server/bots.ts";
 import { LearnedNotes } from "../src/server/memory/learned-notes.ts";
 import { FileMemory } from "../src/server/memory/file-memory.ts";
 import type { CompactionSettings } from "../src/server/chat/pi-engine.ts";
+import { DailySpend } from "../src/server/spend.ts";
 import { Threads } from "../src/server/threads.ts";
+import { pricedProvider } from "./priced-provider.ts";
 
 export const ann: Member = { id: "ann", name: "Ann", tailscaleLogin: "ann@example.com" };
 export const ben: Member = { id: "ben", name: "Ben", tailscaleLogin: "ben@example.com" };
@@ -22,7 +24,7 @@ export type Hamkey = Awaited<ReturnType<typeof startHamkey>>;
  * A real Hamkey server on a random localhost port with temporary storage. Only the model is replaced, by Pi's faux
  * provider, so tests drive the same HTTP and streaming API a Member's phone does.
  */
-export async function startHamkey(options: { devIdentity?: string; webDir?: string; dataDir?: string; extraBots?: object[]; extraModels?: string[]; contextWindow?: number; compaction?: CompactionSettings } = {}) {
+export async function startHamkey(options: { devIdentity?: string; webDir?: string; dataDir?: string; extraBots?: object[]; extraModels?: string[]; contextWindow?: number; compaction?: CompactionSettings; /** US dollars each model response costs; free by default. */ pricePerResponse?: number; /** The daily spend limit; none by default. */ dailyLimitUsd?: number } = {}) {
 	// Passing a `dataDir` from an earlier run, stopped with `keepData`, is a server restart.
 	const dataDir = options.dataDir ?? (await mkdtemp(join(tmpdir(), "hamkey-test-")));
 	if (options.dataDir === undefined) {
@@ -43,19 +45,21 @@ export async function startHamkey(options: { devIdentity?: string; webDir?: stri
 				? undefined
 				: [{ id: "faux-small", contextWindow: options.contextWindow }, ...(options.extraModels ?? []).map((id) => ({ id }))],
 	});
-	const models = createModels();
-	models.setProvider(faux.provider);
+	let spend: DailySpend | undefined;
 	const engine = await openPiEngine({
 		storagePath: join(dataDir, "hamkey.sqlite"),
-		models,
+		provider: options.pricePerResponse === undefined ? faux.provider : pricedProvider(faux.provider, options.pricePerResponse),
+		gate: () => spend!.refusal(),
 		model: { provider: faux.getModel().provider, modelId: faux.getModel().id },
 		memory,
 		learned,
 		compaction: options.compaction,
 		memoryAccess: (binding) => bots.memoryAccess(binding),
 	});
+	spend = new DailySpend({ dataDir, limitUsd: options.dailyLimitUsd ?? Infinity, total: () => engine.totalSpend() });
 	const server = createApp({
 		members: [ann, ben],
+		spend,
 		engine,
 		bots,
 		threads: new Threads(dataDir, engine, bots),

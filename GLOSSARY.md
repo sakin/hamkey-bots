@@ -75,3 +75,9 @@ _Avoid_: Subject, tag
 **Exposure List**:
 A Member's own record of which Topics may be shared, with which Bots, and in how much detail.
 _Avoid_: Rules file, permissions
+
+### Running Hamkey
+
+**Daily limit**:
+The most the household may spend on models in one day, set by the Operator. Once it is reached, Bots answer nothing more until the next day.
+_Avoid_: Budget, quota, cap

@@ -1,18 +1,22 @@
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
-import type { Models } from "@earendil-works/pi-ai";
+import { createModels, type Provider } from "@earendil-works/pi-ai";
 import { type CompactionSettings, createRegistry, Harness } from "@earendil-works/pi-durable";
 import type { LearnedNotes } from "../memory/learned-notes.ts";
 import type { Memory } from "../memory/memory.ts";
 import { type AccessResolver, BindingDoc, memoryExtension } from "./memory-tools.ts";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
-import type { ChatEngine, ChatMessage, ThreadId, ThreadSpec, ThreadView } from "./engine.ts";
+import type { ChatEngine, ChatMessage, RequestGate, ThreadId, ThreadSpec, ThreadView } from "./engine.ts";
+import { gatedProvider } from "./gated-provider.ts";
 
 export type { CompactionSettings };
 export type PiEngineOptions = {
 	/** SQLite file holding every conversation (ADR 0005). */
 	storagePath: string;
-	models: Models;
+	/** Where model requests go. Every request passes `gate` first. */
+	provider: Provider;
 	model: { provider: string; modelId: string };
+	/** Asked before every model request, such as the daily spend limit. Absent lets every request through. */
+	gate?: RequestGate;
 	/** Overrides for when long threads compact; tests shrink the thresholds. */
 	compaction?: CompactionSettings;
 	memory: Memory;
@@ -58,10 +62,19 @@ export async function openPiEngine(options: PiEngineOptions): Promise<ChatEngine
 	const memoryTools = memoryExtension(options.memory, options.learned, options.memoryAccess);
 	const registry = createRegistry();
 	registry.install(memoryTools);
+	// Refusals the gate gave, so a run that failed on one shows the Member its words rather than a generic error.
+	const refusals = new Set<string>();
+	const gate: RequestGate = async () => {
+		const reason = await options.gate?.();
+		if (reason !== undefined) refusals.add(reason);
+		return reason;
+	};
+	const models = createModels();
+	models.setProvider(gatedProvider(options.provider, gate));
 	const harness = await Harness.open(
 		await openNodeSqliteStorage(options.storagePath),
 		{
-			models: options.models,
+			models,
 			registry,
 			settings: { followUpMode: "all", afterFailedRun: "continue", compaction: { enabled: true, ...options.compaction } },
 		},
@@ -131,7 +144,7 @@ export async function openPiEngine(options: PiEngineOptions): Promise<ChatEngine
 		},
 
 		listModels() {
-			return options.models.getModels(options.model.provider).map((m) => ({ id: m.id, name: m.name }));
+			return models.getModels(options.model.provider).map((m) => ({ id: m.id, name: m.name }));
 		},
 
 		defaultModel: options.model.modelId,
@@ -142,7 +155,10 @@ export async function openPiEngine(options: PiEngineOptions): Promise<ChatEngine
 			const submission = await target.submit({ type: "input", content: text, requestId }, context);
 			void submission.wait(context).then(
 				(settled) => {
-					if (settled.status === "unanswered") errors.set(thread, "The Bot could not answer. Try again.");
+					if (settled.status === "unanswered") {
+						const detail = typeof settled.detail === "string" ? settled.detail : undefined;
+						errors.set(thread, detail !== undefined && refusals.has(detail) ? detail : "The Bot could not answer. Try again.");
+					}
 					poke(thread);
 				},
 				() => {},
@@ -168,6 +184,12 @@ export async function openPiEngine(options: PiEngineOptions): Promise<ChatEngine
 				set.delete(emit);
 				state.dispose();
 			};
+		},
+
+		async totalSpend() {
+			const usage = await harness.usage(context);
+			const all = [...Object.values(usage.models), ...Object.values(usage.tools)];
+			return all.reduce((sum, u) => sum + (u.cost?.total ?? 0), 0);
 		},
 
 		async close() {
