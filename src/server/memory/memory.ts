@@ -20,7 +20,7 @@ export interface Memory {
 	loadSummary(scopes: readonly Scope[], limit?: number): Promise<Fact[]>;
 	/** Stores one fact in one scope. */
 	saveFact(scope: Scope, text: string): Promise<Fact>;
-	/** Facts in the scopes whose text contains every word of the query, newest first. */
+	/** Facts in the scopes that contain any word of the query, best fit first and newest first among equals. */
 	search(scopes: readonly Scope[], query: string): Promise<Fact[]>;
 	/** Removes one fact, only if it is in one of the scopes. Returns whether anything was removed. */
 	forget(scopes: readonly Scope[], factId: string): Promise<boolean>;
@@ -41,12 +41,17 @@ export function sameScope(a: Scope, b: Scope): boolean {
 	return scopeKey(a) === scopeKey(b);
 }
 
-/** Whether a fact's text matches a query: every word of the query appears, ignoring case. An empty query matches all. */
-export function matches(text: string, query: string): boolean {
+/** Lowercase words of a query. */
+const words = (query: string) => query.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w !== "");
+
+/**
+ * How well a fact's text fits a query: the number of query words it contains (a plural also matches its singular).
+ * An empty query fits everything equally. Zero means no match. Models phrase queries loosely, so one matching word
+ * is enough to find a fact, and more matching words rank it higher.
+ */
+export function score(text: string, query: string): number {
+	const wanted = words(query);
+	if (wanted.length === 0) return 1;
 	const haystack = text.toLowerCase();
-	return query
-		.toLowerCase()
-		.split(/\s+/)
-		.filter((w) => w !== "")
-		.every((w) => haystack.includes(w));
+	return wanted.filter((w) => haystack.includes(w) || (w.length > 3 && w.endsWith("s") && haystack.includes(w.slice(0, -1)))).length;
 }

@@ -20,6 +20,19 @@ export function memoryContract(name: string, create: () => Promise<Memory>) {
 			expect(await memory.search([ann], "shellfish")).toEqual([]);
 		});
 
+		it("finds a fact from a loose query and ranks the better fit first", async () => {
+			const memory = await create();
+			const diet = await memory.saveFact(household, "The household eats vegetarian on Mondays");
+			const other = await memory.saveFact(household, "Bins go out on Thursday");
+			// One matching word is enough, and a plural finds the singular.
+			expect((await memory.search([household], "is there anything about Mondays and our diet?")).map((f) => f.id)).toEqual([diet.id]);
+			expect((await memory.search([household], "monday")).map((f) => f.id)).toEqual([diet.id]);
+			expect((await memory.search([household], "vegetarian Mondays Thursday bins")).map((f) => f.id).sort()).toEqual([diet.id, other.id].sort());
+			const best = await memory.saveFact(household, "Vegetarian dinner on Mondays is pasta");
+			expect((await memory.search([household], "vegetarian Mondays pasta")).map((f) => f.id)[0]).toBe(best.id);
+			expect(await memory.search([household], "shellfish")).toEqual([]);
+		});
+
 		it("keeps scopes apart", async () => {
 			const memory = await create();
 			await memory.saveFact(household, "We eat dinner at 7");
