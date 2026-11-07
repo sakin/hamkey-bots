@@ -1,4 +1,5 @@
 import type { Bot } from "../bots.ts";
+import { RESEARCH_BOT_ID, WEB_TOOLS } from "../research-bot.ts";
 import type { Scope } from "./memory.ts";
 
 export const BOT_TOOLS = ["memory_save", "memory_search", "memory_forget", "learned_update"] as const;
@@ -8,8 +9,10 @@ export type BotToolName = (typeof BOT_TOOLS)[number];
 export type MemoryAccess = {
 	/** Scopes the Bot reads and searches, and may forget facts in. */
 	read: Scope[];
-	/** The one scope `memory_save` writes to. */
-	write: Scope;
+	/** The one scope `memory_save` writes to; absent when the Bot has no memory at all. */
+	write?: Scope;
+	/** Whether the Bot sees and may rewrite its learned notes. */
+	notes: boolean;
 	tools: readonly string[];
 };
 
@@ -19,12 +22,15 @@ export type MemoryAccess = {
  * Member separately, so it reads only its own notes for that Member.
  */
 export function accessFor(bot: Bot, memberId: string | undefined): MemoryAccess | undefined {
+	// The Research Bot reads web pages written by strangers, so it gets the web tools and no memory (ADR 0004).
+	if (bot.id === RESEARCH_BOT_ID) return memberId === undefined ? undefined : { read: [], notes: false, tools: [...WEB_TOOLS] };
 	const tools = bot.tools ?? [...BOT_TOOLS];
 	switch (bot.kind) {
 		case "household":
 			return {
 				read: [{ kind: "household" }, { kind: "bot", bot: bot.id }],
 				write: { kind: "household" },
+				notes: true,
 				tools,
 			};
 		case "personal": {
@@ -32,13 +38,14 @@ export function accessFor(bot: Bot, memberId: string | undefined): MemoryAccess 
 			return {
 				read: [{ kind: "member", member: memberId }, { kind: "household" }, { kind: "bot", bot: bot.id }],
 				write: { kind: "member", member: memberId },
+				notes: true,
 				tools,
 			};
 		}
 		case "common": {
 			if (memberId === undefined) return undefined;
 			const own: Scope = { kind: "bot", bot: bot.id, member: memberId };
-			return { read: [own], write: own, tools };
+			return { read: [own], write: own, notes: true, tools };
 		}
 	}
 }

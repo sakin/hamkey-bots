@@ -8,6 +8,8 @@ import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite
 import type { Author, ChatEngine, ChatMessage, RequestGate, ThreadId, ThreadSpec, ThreadView } from "./engine.ts";
 import { gatedProvider } from "./gated-provider.ts";
 import { sharedThreadExtension } from "./shared-thread.ts";
+import type { WebAccess } from "../web/web-access.ts";
+import { webExtension } from "./web-tools.ts";
 
 /** The entry kind of a message sent through Hamkey. It records who wrote it; the model sees the input's `content`. */
 const MESSAGE_KIND = "hamkey.message";
@@ -29,6 +31,8 @@ export type PiEngineOptions = {
 	learned: LearnedNotes;
 	/** What a Bot may do with memory, as the Bot is defined now. */
 	memoryAccess: AccessResolver;
+	/** The web, for the Research Bot's tools alone (ADR 0004). */
+	web: WebAccess;
 	/** Called once if the store fails and the runtime shuts itself down; the process should exit so it is restarted. */
 	onFailure?: (error: unknown) => void;
 };
@@ -71,6 +75,8 @@ export async function openPiEngine(options: PiEngineOptions): Promise<ChatEngine
 	const memoryTools = memoryExtension(options.memory, options.learned, options.memoryAccess);
 	const registry = createRegistry();
 	registry.install(memoryTools);
+	const webTools = webExtension(options.web, options.memoryAccess);
+	registry.install(webTools);
 	registry.install(sharedThreadExtension(options.members));
 	// Refusals the gate gave, so a run that failed on one shows the Member its words rather than a generic error.
 	const refusals = new Set<string>();
@@ -105,7 +111,7 @@ export async function openPiEngine(options: PiEngineOptions): Promise<ChatEngine
 		return {
 			model: { provider: options.model.provider, modelId: spec.model ?? options.model.modelId },
 			instructions: spec.instructions,
-			tools: (memoryTools.tools ?? []).filter((t) => offered.includes(t.name)),
+			tools: [...(memoryTools.tools ?? []), ...(webTools.tools ?? [])].filter((t) => offered.includes(t.name)),
 		};
 	}
 

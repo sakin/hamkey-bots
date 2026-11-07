@@ -46,6 +46,7 @@ export function memoryExtension(memory: Memory, learned: LearnedNotes, resolve: 
 		async execute(args, api, context) {
 			const access = await accessOf(api, api.conversationId, context);
 			if (access === undefined) throw new Error("Memory is not available here.");
+			if (access.write === undefined) throw new Error("Memory is not available here.");
 			const fact = await memory.saveFact(access.write, args.fact);
 			return text(`Remembered. [${fact.id}]`);
 		},
@@ -81,7 +82,7 @@ export function memoryExtension(memory: Memory, learned: LearnedNotes, resolve: 
 		parameters: Type.Object({ notes: Type.String() }),
 		async execute(args, api, context) {
 			const binding = await api.snapshot(BindingDoc, api.conversationId, context);
-			if (binding === undefined || binding.botId === "" || resolve(binding) === undefined) throw new Error("Notes are not available here.");
+			if (binding === undefined || binding.botId === "" || resolve(binding)?.notes !== true) throw new Error("Notes are not available here.");
 			await learned.write(binding.botId, args.notes);
 			return text("Notes updated.");
 		},
@@ -93,7 +94,7 @@ export function memoryExtension(memory: Memory, learned: LearnedNotes, resolve: 
 		sections: [
 			section("learned", async (input, context) => {
 				const binding = await input.read.snapshot(BindingDoc, input.conversationId, context);
-				if (binding === undefined || binding.botId === "" || resolve(binding) === undefined) return undefined;
+				if (binding === undefined || binding.botId === "" || resolve(binding)?.notes !== true) return undefined;
 				const notes = (await learned.read(binding.botId)).trim();
 				return notes === "" ? undefined : `Your own notes from earlier conversations:\n${notes}`;
 			}),

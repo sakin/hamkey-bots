@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { Member } from "./members.ts";
 import { accessFor, type MemoryAccess, BOT_TOOLS } from "./memory/access.ts";
 import { primaryBotFor } from "./primary-bot.ts";
+import { researchBot } from "./research-bot.ts";
 
 export type BotKind = "personal" | "household" | "common";
 
@@ -28,6 +29,10 @@ const ID = /^[a-z0-9][a-z0-9-]*$/;
 /** What a Member may set when creating or editing a Bot. The id, kind and owner are not theirs to change. */
 export type BotInput = { name: string; instructions: string; model?: string; tools?: string[] };
 
+/** Built-in Bots are defined in code. A file with one of their ids is ignored, and said so once. */
+const warned = new Set<string>();
+const builtIn = (members: readonly Member[]): Bot[] => [...members.map(primaryBotFor), researchBot()];
+
 /** Reads every `*.json` Bot in `<dataDir>/bots`; files that are not valid Bots are reported, not thrown. */
 async function readBots(dataDir: string, members: readonly Member[]): Promise<{ bots: Bot[]; errors: Map<string, Error> }> {
 	const dir = join(dataDir, "bots");
@@ -40,7 +45,15 @@ async function readBots(dataDir: string, members: readonly Member[]): Promise<{ 
 	}
 	const bots: Bot[] = [];
 	const errors = new Map<string, Error>();
+	const reserved = new Set(builtIn(members).map((b) => b.id));
 	for (const file of files) {
+		if (reserved.has(file.replace(/\.json$/, ""))) {
+			if (!warned.has(join(dir, file))) {
+				warned.add(join(dir, file));
+				console.warn(`Ignoring ${file}: "${file.replace(/\.json$/, "")}" is a built-in Bot, defined by Hamkey itself.`);
+			}
+			continue;
+		}
 		try {
 			let raw: unknown;
 			try {
@@ -69,6 +82,7 @@ export function checkInput(b: Partial<BotInput>): string | undefined {
 	if (b.name.length > 80) return "name is too long";
 	if (!/[\p{L}\p{N}]/u.test(b.name)) return "name needs at least one letter or digit";
 	if (b.name.trim().toLowerCase() === "primary bot") return "that name is reserved for each Member's Primary Bot";
+	if (b.name.trim().toLowerCase() === "research bot") return "that name is reserved for the Research Bot";
 	if (typeof b.instructions !== "string" || b.instructions.trim() === "") return "instructions are required";
 	if (b.instructions.length > 20_000) return "instructions are too long";
 	if (b.model !== undefined && (typeof b.model !== "string" || b.model === "" || b.model.length > 200)) return "model must be a model id";
@@ -105,21 +119,22 @@ export class Bots {
 	#bots: readonly Bot[];
 	/** Bot id to what is wrong with its file right now. */
 	#problems = new Map<string, string>();
-	readonly #primary: readonly Bot[];
+	/** The Bots Hamkey defines itself: each Member's Primary Bot and the Research Bot. Members cannot edit them. */
+	readonly #builtIn: readonly Bot[];
 	readonly #members: readonly Member[];
 	readonly #dataDir: string | undefined;
 	/** File writes run one at a time, so two creates cannot choose the same id. */
 	#writes: Promise<unknown> = Promise.resolve();
 
 	constructor(bots: readonly Bot[], members: readonly Member[], dataDir?: string) {
-		this.#primary = members.map(primaryBotFor);
+		this.#builtIn = builtIn(members);
 		this.#members = members;
 		this.#dataDir = dataDir;
-		this.#bots = Bots.#join(this.#primary, bots);
+		this.#bots = Bots.#join(this.#builtIn, bots);
 	}
 
-	static #join(primary: readonly Bot[], bots: readonly Bot[]): Bot[] {
-		const all = [...primary, ...bots];
+	static #join(builtIn: readonly Bot[], bots: readonly Bot[]): Bot[] {
+		const all = [...builtIn, ...bots];
 		const seen = new Set<string>();
 		for (const bot of all) {
 			if (seen.has(bot.id)) throw new Error(`Two Bots share the id "${bot.id}".`);
@@ -132,9 +147,9 @@ export class Bots {
 		return bot.kind !== "personal" || bot.owner === member.id;
 	}
 
-	/** Whether a Member may edit this Bot: they may use it, and it is not a Primary Bot, which is built in. */
+	/** Whether a Member may edit this Bot: they may use it, and it is not built in (a Primary Bot or the Research Bot). */
 	isEditable(bot: Bot): boolean {
-		return !this.#primary.some((p) => p.id === bot.id);
+		return !this.#builtIn.some((p) => p.id === bot.id);
 	}
 
 	/**
@@ -179,7 +194,7 @@ export class Bots {
 		return this.#write(async () => {
 			const current = this.find(member, id);
 			if (current === undefined) return undefined;
-			if (!this.isEditable(current)) throw new InvalidBot("A Primary Bot is built in and cannot be edited.");
+			if (!this.isEditable(current)) throw new InvalidBot("A built-in Bot cannot be edited.");
 			const bot: Bot = { ...current, name: input.name.trim(), instructions: input.instructions, model: input.model, tools: input.tools };
 			await this.#save(bot);
 			this.#bots = this.#bots.map((b) => (b.id === id ? bot : b));
@@ -201,7 +216,7 @@ export class Bots {
 		const { bots, errors } = await readBots(this.#dataDir!, this.#members);
 		const before = this.#bots;
 		for (const id of errors.keys()) {
-			const previous = before.find((b) => b.id === id && !this.#primary.includes(b));
+			const previous = before.find((b) => b.id === id && !this.#builtIn.includes(b));
 			if (previous !== undefined) bots.push(previous);
 		}
 		// Say what is wrong once, not on every request, and again only if the problem changes.
@@ -216,7 +231,7 @@ export class Bots {
 		};
 		bots.sort((x, y) => place(x) - place(y));
 		try {
-			this.#bots = Bots.#join(this.#primary, bots);
+			this.#bots = Bots.#join(this.#builtIn, bots);
 		} catch (error) {
 			console.error((error as Error).message);
 		}
@@ -241,7 +256,7 @@ export class Bots {
 		return bot === undefined ? undefined : accessFor(bot, binding.memberId ?? undefined);
 	}
 
-	/** The Member's Bots, Primary Bot first. */
+	/** The Member's Bots: the Primary Bot, then the Research Bot, then the rest. */
 	listFor(member: Member): Bot[] {
 		return this.#bots.filter((b) => Bots.mayUse(member, b));
 	}

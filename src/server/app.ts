@@ -11,6 +11,7 @@ import { BOT_TOOLS } from "./memory/access.ts";
 import { resolveMember } from "./identity.ts";
 import type { Member } from "./members.ts";
 import type { DailySpend } from "./spend.ts";
+import { RESEARCH_BOT_ID } from "./research-bot.ts";
 import { specFor, Threads } from "./threads.ts";
 
 export type AppOptions = {
@@ -67,6 +68,8 @@ export function createApp(options: AppOptions): Server {
 		// A Household Bot's thread is one that both Members write in.
 		shared: bot.kind === "household",
 		editable: bots.isEditable(bot),
+		// Its answers come from web pages, so the Member is told to check them. Absent for every other Bot.
+		web: bot.id === RESEARCH_BOT_ID ? true : undefined,
 		// Set while the Bot's file is broken and its last working version is in use.
 		warning: bots.hasProblem(bot.id) ? "This Bot's file has an error, so its last working version is in use." : undefined,
 	});
@@ -139,7 +142,7 @@ export function createApp(options: AppOptions): Server {
 		messages: view.messages.map(({ author, ...m }) => {
 			const member = author === undefined ? undefined : options.members.find((x) => x.id === author);
 			const sender = m.role === "assistant" ? { id: bot.id, name: bot.name } : member && { id: member.id, name: member.name };
-			return { ...m, sender };
+			return { ...m, sender, untrusted: m.role === "assistant" && bot.id === RESEARCH_BOT_ID ? true : undefined };
 		}),
 	});
 

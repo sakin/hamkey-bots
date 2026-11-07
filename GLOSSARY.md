@@ -49,8 +49,12 @@ A Bot with one definition and a separate private thread for each Member.
 _Avoid_: Shared bot, global bot
 
 **Research Bot**:
-The Seeded Common Bot that does web research for Members and for other Bots. It is the only Bot with web access.
+The built-in Common Bot that does web research for Members and for other Bots. It is the only Bot with web access, and it has no personal memory. It opens only links from its own search results, and what it reads and says is marked untrusted. Members cannot edit it.
 _Avoid_: Web bot, search bot
+
+**Untrusted**:
+Text from the web, and anything a Bot builds from it. It is shown to Bots wrapped and labelled, and to Members with a "from the web" note, because a page can try to give orders.
+_Avoid_: Unsafe, tainted
 
 ### Memory
 
