@@ -155,6 +155,9 @@
 			{/key}
 		{:else}
 		<main bind:this={scroller} class="flex-1 space-y-3 overflow-y-auto px-4 py-4" aria-live="polite">
+			{#if bot?.web}
+				<p class="rounded-lg bg-amber-50 px-3 py-2 text-center text-xs text-amber-900">Answers come from the web: check the sources before relying on them.</p>
+			{/if}
 			{#if view.messages.length === 0 && !view.draft}
 				<p class="pt-8 text-center text-sm text-gray-400">Say hello to start the conversation.</p>
 			{/if}
@@ -172,6 +175,7 @@
 					>
 						{message.text}
 					</p>
+					{#if message.untrusted}<span class="mt-0.5 px-1 text-xs text-amber-700">from the web</span>{/if}
 				</div>
 			{/each}
 			{#if view.busy}

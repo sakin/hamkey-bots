@@ -13,6 +13,8 @@ import { FileMemory } from "../src/server/memory/file-memory.ts";
 import type { CompactionSettings } from "../src/server/chat/pi-engine.ts";
 import { DailySpend } from "../src/server/spend.ts";
 import { Threads } from "../src/server/threads.ts";
+import { FakeWeb } from "./fake-web.ts";
+import type { WebAccess } from "../src/server/web/web-access.ts";
 import { pricedProvider } from "./priced-provider.ts";
 
 export const ann: Member = { id: "ann", name: "Ann", tailscaleLogin: "ann@example.com" };
@@ -24,7 +26,7 @@ export type Hamkey = Awaited<ReturnType<typeof startHamkey>>;
  * A real Hamkey server on a random localhost port with temporary storage. Only the model is replaced, by Pi's faux
  * provider, so tests drive the same HTTP and streaming API a Member's phone does.
  */
-export async function startHamkey(options: { devIdentity?: string; webDir?: string; dataDir?: string; extraBots?: object[]; extraModels?: string[]; contextWindow?: number; compaction?: CompactionSettings; /** US dollars each model response costs; free by default. */ pricePerResponse?: number; /** The daily spend limit; none by default. */ dailyLimitUsd?: number } = {}) {
+export async function startHamkey(options: { devIdentity?: string; webDir?: string; dataDir?: string; extraBots?: object[]; extraModels?: string[]; contextWindow?: number; compaction?: CompactionSettings; /** US dollars each model response costs; free by default. */ pricePerResponse?: number; /** The daily spend limit; none by default. */ dailyLimitUsd?: number; /** The web the Research Bot uses; an empty fake by default. */ web?: WebAccess } = {}) {
 	// Passing a `dataDir` from an earlier run, stopped with `keepData`, is a server restart.
 	const dataDir = options.dataDir ?? (await mkdtemp(join(tmpdir(), "hamkey-test-")));
 	if (options.dataDir === undefined) {
@@ -45,6 +47,7 @@ export async function startHamkey(options: { devIdentity?: string; webDir?: stri
 				? undefined
 				: [{ id: "faux-small", contextWindow: options.contextWindow }, ...(options.extraModels ?? []).map((id) => ({ id }))],
 	});
+	const web = options.web ?? new FakeWeb();
 	let spend: DailySpend | undefined;
 	const engine = await openPiEngine({
 		storagePath: join(dataDir, "hamkey.sqlite"),
@@ -56,6 +59,7 @@ export async function startHamkey(options: { devIdentity?: string; webDir?: stri
 		learned,
 		compaction: options.compaction,
 		memoryAccess: (binding) => bots.memoryAccess(binding),
+		web,
 	});
 	spend = new DailySpend({ dataDir, limitUsd: options.dailyLimitUsd ?? Infinity, total: () => engine.totalSpend() });
 	const server = createApp({

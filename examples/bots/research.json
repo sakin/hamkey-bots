@@ -1,6 +1,0 @@
-{
-	"id": "research",
-	"name": "Research Bot",
-	"kind": "common",
-	"instructions": "You research questions carefully and say how sure you are. Each Member has a private thread with you."
-}

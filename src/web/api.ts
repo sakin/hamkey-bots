@@ -1,9 +1,9 @@
 /** `sender` is the Member who wrote a user message, or the Bot for a reply. Old messages may have none. */
-export type ChatMessage = { id: string; role: "user" | "assistant"; text: string; sender?: { id: string; name: string } };
+export type ChatMessage = { id: string; role: "user" | "assistant"; text: string; sender?: { id: string; name: string }; /** Set on replies built from web pages. */ untrusted?: boolean };
 export type ThreadView = { messages: ChatMessage[]; draft?: string; busy: boolean; error?: string };
 export type Me = { member: { id: string; name: string }; devMembers?: string[] };
 export type BotKind = "personal" | "household" | "common";
-export type BotSummary = { id: string; name: string; kind: BotKind; shared: boolean; editable: boolean; warning?: string };
+export type BotSummary = { id: string; name: string; kind: BotKind; shared: boolean; editable: boolean; /** The Bot reads the web, so its answers need checking. */ web?: boolean; warning?: string };
 export type BotDefinition = BotSummary & { instructions: string; model: string | null; tools: string[] };
 export type BotForm = { name: string; instructions: string; model: string | null; tools: string[]; kind: BotKind };
 export type Catalog = { models: { id: string; name: string }[]; defaultModel: string; tools: string[] };

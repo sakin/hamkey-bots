@@ -3,6 +3,7 @@ import type { LearnedNotes } from "../memory/learned-notes.ts";
 import type { Memory } from "../memory/memory.ts";
 import type { ChatEngine, RequestGate } from "./engine.ts";
 import type { AccessResolver } from "./memory-tools.ts";
+import type { WebAccess } from "../web/web-access.ts";
 import { openPiEngine } from "./pi-engine.ts";
 
 /**
@@ -16,6 +17,7 @@ export function openOpenRouterEngine(options: {
 	memory: Memory;
 	learned: LearnedNotes;
 	memoryAccess: AccessResolver;
+	web: WebAccess;
 	gate?: RequestGate;
 	onFailure?: (error: unknown) => void;
 }): Promise<ChatEngine> {
@@ -28,6 +30,7 @@ export function openOpenRouterEngine(options: {
 		memory: options.memory,
 		learned: options.learned,
 		memoryAccess: options.memoryAccess,
+		web: options.web,
 		onFailure: options.onFailure,
 	});
 }

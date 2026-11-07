@@ -7,11 +7,14 @@ import { loadConfig } from "./config.ts";
 import { LearnedNotes } from "./memory/learned-notes.ts";
 import { FileMemory } from "./memory/file-memory.ts";
 import { loadMembers } from "./members.ts";
+import { productionWeb } from "./web/brave.ts";
 import { DailySpend } from "./spend.ts";
 import { Threads } from "./threads.ts";
 
 const config = loadConfig();
 if (!process.env.OPENROUTER_API_KEY) console.warn("OPENROUTER_API_KEY is not set: Bots cannot answer until it is.");
+
+if (!process.env.BRAVE_SEARCH_API_KEY) console.warn("BRAVE_SEARCH_API_KEY is not set: the Research Bot cannot search the web until it is.");
 
 await mkdir(config.dataDir, { recursive: true });
 const members = await loadMembers(config.dataDir);
@@ -23,6 +26,7 @@ let spend: DailySpend | undefined;
 const engine = await openOpenRouterEngine({
 	gate: () => spend!.refusal(),
 	members,
+	web: productionWeb(),
 	memory: new FileMemory(config.dataDir),
 	learned: new LearnedNotes(config.dataDir),
 	memoryAccess: (binding) => bots.memoryAccess(binding),

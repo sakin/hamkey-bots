@@ -1,6 +1,8 @@
 # Copy to mise.local.toml and fill in. Never commit the copy.
 [env]
 OPENROUTER_API_KEY = { value = "", redact = true }
+# Optional: lets the Research Bot search the web (Brave Search API). Without it the Research Bot says search is not set up.
+BRAVE_SEARCH_API_KEY = { value = "", redact = true }
 
 # Local development: act as either Member (set HAMKEY_DEV_IDENTITY to a Member id from members.json).
 # The server refuses to start with this set unless NODE_ENV=development (npm run dev:server sets it).

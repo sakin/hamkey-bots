@@ -27,12 +27,12 @@ describe("Bot list", () => {
 		hamkey = await startHamkey();
 		expect(await list(hamkey.ann)).toEqual([
 			{ id: "primary-ann", name: "Primary Bot", kind: "personal", shared: false, editable: false },
+			{ id: "research", name: "Research Bot", kind: "common", shared: false, editable: false, web: true },
 			{ id: "meal-planner", name: "Meal Planner", kind: "household", shared: true, editable: true },
-			{ id: "research", name: "Research Bot", kind: "common", shared: false, editable: true },
 			{ id: "trip-planner", name: "Trip Planner", kind: "personal", shared: false, editable: true },
 		]);
 		const bens = await list(hamkey.ben);
-		expect(bens.map((b: { id: string }) => b.id)).toEqual(["primary-ben", "meal-planner", "research"]);
+		expect(bens.map((b: { id: string }) => b.id)).toEqual(["primary-ben", "research", "meal-planner"]);
 	});
 
 	it("loads live Bots from the data folder", async () => {
