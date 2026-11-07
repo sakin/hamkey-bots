@@ -105,6 +105,18 @@ describe("memory", () => {
 		expect(await texts(hamkey, household)).toEqual([]);
 	});
 
+	it("tells the Bot which tools it has and does not have", async () => {
+		hamkey = await startHamkey({
+			extraBots: [{ id: "reader", name: "Reader", kind: "household", instructions: "Hi.", tools: ["memory_search"] }],
+		});
+		const { prompts } = await say(hamkey, hamkey.ann, "Forget jazz", [], "reader");
+		expect(prompts[0]).toContain("Tools you have: memory_search.");
+		expect(prompts[0]).toContain("Tools you do not have: memory_save, memory_forget");
+		const all = await say(hamkey, hamkey.ann, "hi");
+		expect(all.prompts[0]).toContain("Tools you have: memory_save, memory_search, memory_forget.");
+		expect(all.prompts[0]).not.toContain("Tools you do not have");
+	});
+
 	it("refuses a tool the Bot lost since its thread was made, through the second check", async () => {
 		const bot = { id: "reader", name: "Reader", kind: "household", instructions: "Hi." };
 		hamkey = await startHamkey({ extraBots: [{ ...bot, tools: ["memory_save", "memory_search"] }] });

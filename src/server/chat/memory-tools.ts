@@ -1,7 +1,7 @@
 import { Type } from "@earendil-works/pi-ai";
 import { type ConversationId, defineDoc, defineExtension, defineTool, type DocumentReader, hook, section, ToolTask } from "@earendil-works/pi-durable";
 import type { Context } from "@earendil-works/chord/context";
-import type { MemoryAccess } from "../memory/access.ts";
+import { MEMORY_TOOLS, type MemoryAccess } from "../memory/access.ts";
 import type { Fact, Memory } from "../memory/memory.ts";
 
 /** Who a conversation belongs to. Written once when the thread is created, in the same commit, and never from the model. */
@@ -76,6 +76,19 @@ export function memoryExtension(memory: Memory, resolve: AccessResolver) {
 		name: "hamkey-memory",
 		tools: [save, search, forget],
 		sections: [
+			// Says which tools the Bot has, so it does not claim to have used one it was not given. Follows edits to the Bot.
+			section("capabilities", async (input, context) => {
+				const access = await accessOf(input.read, input.conversationId, context);
+				if (access === undefined) return undefined;
+				const missing = MEMORY_TOOLS.filter((t) => !access.tools.includes(t));
+				return [
+					`Tools you have: ${access.tools.length === 0 ? "none" : access.tools.join(", ")}.`,
+					missing.length === 0 ? undefined : `Tools you do not have: ${missing.join(", ")}.`,
+					"Never say you did something that needs a tool you do not have; say you cannot do it.",
+				]
+					.filter((l) => l !== undefined)
+					.join("\n");
+			}),
 			section("memory", async (input, context) => {
 				const access = await accessOf(input.read, input.conversationId, context);
 				if (access === undefined || !access.tools.some((t) => t.startsWith("memory_"))) return undefined;
