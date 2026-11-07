@@ -1,5 +1,5 @@
 /**
- * Hamkey's thin interface to the conversation runtime (ADR 0001). Nothing outside `chat/pi-engine.ts` imports Pi Durable,
+ * Hamkey's thin interface to the conversation runtime (ADR 0001). Nothing outside the `chat/` folder imports Pi Durable,
  * so an upgrade or replacement touches one file.
  */
 
@@ -17,7 +17,8 @@ export type ThreadView = {
 	error?: string;
 };
 
-export type ThreadSpec = { instructions: string };
+/** What a new thread needs. `memberId` is set unless the thread is a Household Bot's shared one. */
+export type ThreadSpec = { instructions: string; botId: string; memberId?: string };
 
 export interface ChatEngine {
 	createThread(spec: ThreadSpec): Promise<ThreadId>;

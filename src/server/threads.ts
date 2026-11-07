@@ -31,10 +31,11 @@ export class Threads {
 	async mainThread(member: Member, botId: string): Promise<{ bot: Bot; thread: ThreadId } | undefined> {
 		const bot = this.#bots.find(member, botId);
 		if (bot === undefined) return undefined;
-		const key = `${bot.id}:${bot.kind === "household" ? "household" : member.id}`;
+		const owner = bot.kind === "household" ? undefined : member.id;
+		const key = `${bot.id}:${owner ?? "household"}`;
 		let pending = this.#pending.get(key);
 		if (pending === undefined) {
-			pending = this.#resolve(key, bot);
+			pending = this.#resolve(key, bot, owner);
 			this.#pending.set(key, pending);
 			// A failure must not stick: forget it so the next request tries again.
 			pending.catch(() => {
@@ -44,12 +45,12 @@ export class Threads {
 		return { bot, thread: await pending };
 	}
 
-	async #resolve(key: string, bot: Bot): Promise<ThreadId> {
+	async #resolve(key: string, bot: Bot, memberId: string | undefined): Promise<ThreadId> {
 		const index = await this.#load();
 		const existing = index[key];
 		if (existing !== undefined) return existing;
 		// The thread takes the Bot's instructions as they are now; editing the Bot file later does not change existing threads.
-		const id = await this.#engine.createThread({ instructions: bot.instructions });
+		const id = await this.#engine.createThread({ instructions: bot.instructions, botId: bot.id, memberId });
 		index[key] = id;
 		try {
 			await this.#save(index);

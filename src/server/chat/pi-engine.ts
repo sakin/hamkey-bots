@@ -1,14 +1,22 @@
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
 import type { Models } from "@earendil-works/pi-ai";
-import { createRegistry, Harness } from "@earendil-works/pi-durable";
+import { type CompactionSettings, createRegistry, Harness } from "@earendil-works/pi-durable";
+import type { Memory } from "../memory/memory.ts";
+import { type AccessResolver, BindingDoc, memoryExtension } from "./memory-tools.ts";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import type { ChatEngine, ChatMessage, ThreadId, ThreadSpec, ThreadView } from "./engine.ts";
 
+export type { CompactionSettings };
 export type PiEngineOptions = {
 	/** SQLite file holding every conversation (ADR 0005). */
 	storagePath: string;
 	models: Models;
 	model: { provider: string; modelId: string };
+	/** Overrides for when long threads compact; tests shrink the thresholds. */
+	compaction?: CompactionSettings;
+	memory: Memory;
+	/** What a Bot may do with memory, as the Bot is defined now. */
+	memoryAccess: AccessResolver;
 	/** Called once if the store fails and the runtime shuts itself down; the process should exit so it is restarted. */
 	onFailure?: (error: unknown) => void;
 };
@@ -45,12 +53,15 @@ function project(value: { entries: readonly Entry[]; docs: Readonly<Record<strin
 }
 
 export async function openPiEngine(options: PiEngineOptions): Promise<ChatEngine> {
+	const memoryTools = memoryExtension(options.memory, options.memoryAccess);
+	const registry = createRegistry();
+	registry.install(memoryTools);
 	const harness = await Harness.open(
 		await openNodeSqliteStorage(options.storagePath),
 		{
 			models: options.models,
-			registry: createRegistry(),
-			settings: { followUpMode: "all", afterFailedRun: "continue" },
+			registry,
+			settings: { followUpMode: "all", afterFailedRun: "continue", compaction: { enabled: true, ...options.compaction } },
 		},
 		context,
 	);
@@ -82,10 +93,20 @@ export async function openPiEngine(options: PiEngineOptions): Promise<ChatEngine
 
 	return {
 		async createThread(spec: ThreadSpec) {
+			const binding = { botId: spec.botId, memberId: spec.memberId ?? null };
+			// Offer only the tools the Bot has; the binding is written in the same commit that creates the thread.
+			const offered = options.memoryAccess(binding)?.tools ?? [];
 			const created = await harness.createConversation(
 				{
 					ownership: { kind: "ownerless" },
-					agent: { model: options.model, instructions: spec.instructions },
+					agent: {
+						model: options.model,
+						instructions: spec.instructions,
+						tools: (memoryTools.tools ?? []).filter((t) => offered.includes(t.name)),
+					},
+					init: async (tx, id) => {
+						Object.assign(await tx.doc(BindingDoc, id), binding);
+					},
 				},
 				context,
 			);

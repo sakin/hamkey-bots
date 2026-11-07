@@ -1,6 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Member } from "./members.ts";
+import { accessFor, type MemoryAccess, MEMORY_TOOLS } from "./memory/access.ts";
 import { primaryBotFor } from "./primary-bot.ts";
 
 export type BotKind = "personal" | "household" | "common";
@@ -13,6 +14,8 @@ export type Bot = {
 	/** Member id; required for personal Bots and absent otherwise. */
 	owner?: string;
 	instructions: string;
+	/** Names of the tools this Bot may use. Absent means every memory tool. */
+	tools?: string[];
 };
 
 export type BotSummary = Pick<Bot, "id" | "name" | "kind">;
@@ -59,7 +62,13 @@ function validate(raw: unknown, file: string, members: readonly Member[]): Bot {
 	} else if (b.owner !== undefined) {
 		return fail(`a ${b.kind} Bot has no owner`);
 	}
-	return { id: b.id, name: b.name, kind: b.kind as BotKind, owner: b.owner, instructions: b.instructions };
+	if (b.tools !== undefined) {
+		const known: readonly string[] = MEMORY_TOOLS;
+		if (!Array.isArray(b.tools) || !b.tools.every((t) => typeof t === "string" && known.includes(t))) {
+			return fail(`tools must be a list drawn from ${MEMORY_TOOLS.join(", ")}`);
+		}
+	}
+	return { id: b.id, name: b.name, kind: b.kind as BotKind, owner: b.owner, instructions: b.instructions, tools: b.tools };
 }
 
 /** Every Bot a Member may use, and the one rule for who may use what. */
@@ -78,6 +87,12 @@ export class Bots {
 
 	static mayUse(member: Member, bot: Bot): boolean {
 		return bot.kind !== "personal" || bot.owner === member.id;
+	}
+
+	/** What the Bot may do with memory in a conversation of this Member, or undefined if nothing. Reads the Bot as defined now. */
+	memoryAccess(binding: { botId: string; memberId: string | null }): MemoryAccess | undefined {
+		const bot = this.#bots.find((b) => b.id === binding.botId);
+		return bot === undefined ? undefined : accessFor(bot, binding.memberId ?? undefined);
 	}
 
 	/** The Member's Bots, Primary Bot first. */
