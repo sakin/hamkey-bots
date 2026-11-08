@@ -14,6 +14,8 @@ import { loadMembers } from "./members.ts";
 import { productionWeb } from "./web/brave.ts";
 import { DailySpend } from "./spend.ts";
 import { Threads } from "./threads.ts";
+import { Push } from "./push.ts";
+import { loadVapid, WebPushSender } from "./web-push-sender.ts";
 
 const config = loadConfig();
 if (!process.env.OPENROUTER_API_KEY) console.warn("OPENROUTER_API_KEY is not set: Bots cannot answer until it is.");
@@ -53,7 +55,12 @@ const engine = await openOpenRouterEngine({
 	},
 });
 spend = new DailySpend({ dataDir: config.dataDir, limitUsd: config.dailyLimitUsd, total: () => engine.totalSpend() });
+const vapid = await loadVapid(config.dataDir);
+// The contact the push services may use to reach the Operator (RFC 8292 needs one).
+const push = new Push({ dataDir: config.dataDir, sender: new WebPushSender(vapid, process.env.HAMKEY_PUSH_SUBJECT || "mailto:hamkey@example.com"), publicKey: vapid.publicKey });
+push.watch(cards);
 const server = createApp({
+	push,
 	members,
 	spend,
 	memory,

@@ -16,7 +16,7 @@ export type Card = {
 export type ThreadView = { messages: ChatMessage[]; draft?: string; busy: boolean; error?: string; stuck?: boolean; cards?: Card[] };
 export type Me = { member: { id: string; name: string }; devMembers?: string[] };
 export type BotKind = "personal" | "household" | "common";
-export type BotSummary = { id: string; name: string; kind: BotKind; shared: boolean; editable: boolean; /** The Bot reads the web, so its answers need checking. */ web?: boolean; warning?: string };
+export type BotSummary = { id: string; name: string; kind: BotKind; shared: boolean; editable: boolean; /** Cards in this Bot's thread that wait for you. */ waiting?: number; /** The Bot reads the web, so its answers need checking. */ web?: boolean; warning?: string };
 export type BotDefinition = BotSummary & { instructions: string; model: string | null; tools: string[] };
 export type BotForm = { name: string; instructions: string; model: string | null; tools: string[]; kind: BotKind };
 export type Catalog = { models: { id: string; name: string }[]; defaultModel: string; tools: string[]; /** Ticked for a new Bot. */ defaultTools: string[] };
@@ -237,4 +237,48 @@ export async function fetchAsks(): Promise<AskEntry[] | undefined> {
 	} catch {
 		return undefined;
 	}
+}
+
+/** Whether this browser can do Web Push at all (iOS only inside an app added to the home screen). */
+export const pushSupported = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+
+/** True if this device is already subscribed. */
+export async function pushEnabled(): Promise<boolean> {
+	if (!pushSupported() || Notification.permission !== "granted") return false;
+	try {
+		return (await (await navigator.serviceWorker.ready).pushManager.getSubscription()) !== null;
+	} catch {
+		return false;
+	}
+}
+
+/** Asks permission, subscribes through the service worker and registers the subscription. Undefined means done; otherwise why not. */
+export async function enablePush(): Promise<string | undefined> {
+	if (!pushSupported()) return "This browser cannot receive notifications. On an iPhone, add Hamkey to the home screen first.";
+	try {
+		if ((await Notification.requestPermission()) !== "granted") return "Notifications are blocked. Allow them in the browser settings.";
+		const keyResponse = await fetch("/api/push/key", { headers: headers() });
+		if (!keyResponse.ok) return "Could not reach the server. Try again.";
+		const { key } = await keyResponse.json();
+		const registration = await navigator.serviceWorker.ready;
+		const subscription =
+			(await registration.pushManager.getSubscription()) ??
+			(await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key }));
+		const res = await fetch("/api/push/subscriptions", {
+			method: "POST",
+			headers: { ...headers(), "content-type": "application/json" },
+			body: JSON.stringify(subscription.toJSON()),
+		});
+		return res.ok ? undefined : ((await res.json().catch(() => ({}))).error ?? "Could not turn notifications on.");
+	} catch {
+		return "Could not turn notifications on. Try again.";
+	}
+}
+
+/** Shows the number of waiting items on the app icon where the browser supports it. */
+export function setAppBadge(count: number) {
+	try {
+		if (count > 0) void navigator.setAppBadge?.(count)?.catch(() => {});
+		else void navigator.clearAppBadge?.()?.catch(() => {});
+	} catch {}
 }

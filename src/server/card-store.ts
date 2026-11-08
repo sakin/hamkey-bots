@@ -80,9 +80,11 @@ export class CardStore {
 	async create(input: { id: string; type: CardType; thread: string; botId: string; addressees: string[]; fields: unknown }): Promise<Card> {
 		const fields = validateFields(input.type, input.fields);
 		if (input.addressees.length === 0) throw new InvalidCard("A Card needs someone to answer it.");
+		let fresh = false;
 		const card = await this.#change((cards) => {
 			const existing = cards.find((c) => c.id === input.id);
 			if (existing !== undefined) return existing;
+			fresh = true;
 			for (const member of input.addressees) {
 				if (cards.filter((c) => c.status === "waiting" && c.addressees.includes(member)).length >= MAX_WAITING) {
 					throw new InvalidCard("Too many Cards are already waiting for an answer. Wait for the Member to deal with them.");
@@ -101,7 +103,8 @@ export class CardStore {
 			cards.push(made);
 			return made;
 		});
-		this.#notify(card);
+		// A rerun that finds its Card already made announces nothing, so push cannot send the same Card twice.
+		if (fresh) this.#notify(card);
 		return card;
 	}
 
