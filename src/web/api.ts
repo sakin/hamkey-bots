@@ -1,8 +1,10 @@
 /** `sender` is the Member who wrote a user message, or the Bot for a reply. Old messages may have none. */
-export type ChatMessage = { id: string; role: "user" | "assistant"; text: string; sender?: { id: string; name: string }; /** Set on replies built from web pages. */ untrusted?: boolean };
+export type ChatMessage = { id: string; role: "user" | "assistant"; text: string; /** ms since the epoch; Cards are placed among messages by time. */ at?: number; sender?: { id: string; name: string }; /** Set on replies built from web pages. */ untrusted?: boolean };
 /** A Card as the server sends it. Every field is plain text and is drawn as text, never as HTML. */
 export type Card = {
 	id: string;
+	/** ISO time the Bot posted it. */
+	createdAt?: string;
 	type: "approval" | "choice" | "question";
 	status: "waiting" | "approved" | "rejected" | "chosen" | "answered";
 	bot: { id: string; name: string };
