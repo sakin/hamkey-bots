@@ -3,10 +3,10 @@ export type ChatMessage = { id: string; role: "user" | "assistant"; text: string
 /** A Card as the server sends it. Every field is plain text and is drawn as text, never as HTML. */
 export type Card = {
 	id: string;
-	type: "approval" | "choice";
-	status: "waiting" | "approved" | "rejected" | "chosen";
+	type: "approval" | "choice" | "question";
+	status: "waiting" | "approved" | "rejected" | "chosen" | "answered";
 	bot: { id: string; name: string };
-	/** Approval: fact, topic, topicLabel. Choice: question, options. */
+	/** Approval: fact, topic, topicLabel. Choice: question, options. Question: question. */
 	fields: { fact?: string; topicLabel?: string; question?: string; options?: string[] };
 	/** Index of the option picked on a Choice Card. */
 	choice?: number;
@@ -200,5 +200,29 @@ export async function saveExposure(exposure: Record<string, string[]>): Promise<
 		return res.ok ? { view: body } : { error: body.error ?? "Could not save." };
 	} catch {
 		return { error: "Could not reach the server." };
+	}
+}
+
+/** One line of the Ask log, as the server sends it. All of it is plain text. */
+export type AskEntry = {
+	id: string;
+	time: string;
+	/** The asking Bot. */
+	bot: string;
+	/** The Member the Ask was about. */
+	about: string | null;
+	topicLabel: string;
+	question: string;
+	outcome: "refused" | "no-facts" | "answered" | "failed";
+	answer?: string;
+	reason?: string;
+};
+
+export async function fetchAsks(): Promise<AskEntry[] | undefined> {
+	try {
+		const res = await fetch("/api/asks", { headers: headers() });
+		return res.ok ? (await res.json()).asks : undefined;
+	} catch {
+		return undefined;
 	}
 }

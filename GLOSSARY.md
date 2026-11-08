@@ -74,6 +74,10 @@ _Avoid_: Permission request, consent prompt
 A Card that asks for one pick from two to six short options. In a Shared thread either Member may answer; in a personal thread only its Member. The pick reaches the Bot as the next input.
 _Avoid_: Poll, quick reply
 
+**Question Card**:
+The Card a direct question is shown as. It holds the question as plain text and has no buttons.
+_Avoid_: Prompt card
+
 ### Memory
 
 **Fact**:
@@ -101,6 +105,14 @@ _Avoid_: Query, bot chat, cross-bot request
 **Ask conversation**:
 The separate conversation in which a Primary Bot answers one Ask. It has no tools and no memory, and holds only the question, the asking Bot's name, the Topic and the facts the Member approved for that Topic. It never touches the Member's main thread.
 _Avoid_: Ask thread, sub-chat
+
+**Ask log**:
+The record of every Ask: which Bot asked, about which Member and Topic, the question, and the answer or why there was none. Refused Asks are in it. Both Members read all of it, including Asks about the other, because every answer was shared. A Bot's name is hidden from the Member who may not use that Bot.
+_Avoid_: Audit trail, history
+
+**Direct question**:
+What a Bot asks a Member in the thread when an Ask is refused, finds no approved facts or fails, instead of guessing. It is a Card with no buttons, waiting for that Member, and it is answered when they next write in the thread. It is made only if that Member can read the thread; otherwise the Bot tells its own Member it could not find out. A waiting direct question counts as a Bot needing a Member.
+_Avoid_: Follow-up, fallback message
 
 **Topic**:
 A named category of a Member's information, such as evening availability.

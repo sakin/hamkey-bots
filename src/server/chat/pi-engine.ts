@@ -42,7 +42,7 @@ export type PiEngineOptions = {
 	exposure: Exposure;
 	/** A Bot's name as it is defined now, for the Ask conversation's instructions. */
 	botName: (botId: string) => string | undefined;
-	/** Told what became of every Ask (issue #13 keeps these). */
+	/** Told what became of every Ask; the server keeps them in the Ask log. */
 	recordAsk?: (entry: AskRecord) => void | Promise<void>;
 	/** What a Bot may do with memory, as the Bot is defined now. */
 	memoryAccess: AccessResolver;
@@ -106,6 +106,7 @@ export async function openPiEngine(options: PiEngineOptions): Promise<ChatEngine
 		memory: options.memory,
 		exposure: options.exposure,
 		botName: options.botName,
+		cards: options.cards,
 		record: options.recordAsk,
 	});
 	registry.install(askTool);

@@ -1,5 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { AskLog } from "./ask-log.ts";
 import { Bots, loadBots } from "./bots.ts";
 import { CardStore } from "./card-store.ts";
 import { Exposure } from "./exposure.ts";
@@ -26,6 +27,8 @@ const cards = new CardStore(config.dataDir);
 const exposure = new Exposure(config.dataDir);
 const bots = new Bots(await loadBots(config.dataDir, members), members, config.dataDir);
 
+const askLog = new AskLog(config.dataDir, (id) => bots.name(id));
+
 // The limit reads the engine's totals and the engine asks the limit before each request, so one is bound late.
 let spend: DailySpend | undefined;
 const engine = await openOpenRouterEngine({
@@ -37,6 +40,7 @@ const engine = await openOpenRouterEngine({
 	learned: new LearnedNotes(config.dataDir),
 	exposure,
 	botName: (id) => bots.name(id),
+	recordAsk: (entry) => askLog.record(entry),
 	memoryAccess: (binding) => bots.memoryAccess(binding),
 	storagePath: join(config.dataDir, "hamkey.sqlite"),
 	modelId: config.model.modelId,
@@ -53,6 +57,7 @@ const server = createApp({
 	memory,
 	cards,
 	exposure,
+	askLog,
 	engine,
 	bots,
 	threads: new Threads(config.dataDir, engine, bots),

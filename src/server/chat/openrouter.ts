@@ -3,6 +3,7 @@ import type { LearnedNotes } from "../memory/learned-notes.ts";
 import type { CardStore } from "../card-store.ts";
 import type { Exposure } from "../exposure.ts";
 import type { Memory } from "../memory/memory.ts";
+import type { AskRecord } from "./ask-tool.ts";
 import type { ChatEngine, RequestGate } from "./engine.ts";
 import type { AccessResolver } from "./memory-tools.ts";
 import type { WebAccess } from "../web/web-access.ts";
@@ -21,6 +22,7 @@ export function openOpenRouterEngine(options: {
 	learned: LearnedNotes;
 	exposure: Exposure;
 	botName: (botId: string) => string | undefined;
+	recordAsk?: (entry: AskRecord) => void | Promise<void>;
 	memoryAccess: AccessResolver;
 	web: WebAccess;
 	gate?: RequestGate;
@@ -37,6 +39,7 @@ export function openOpenRouterEngine(options: {
 		learned: options.learned,
 		exposure: options.exposure,
 		botName: options.botName,
+		recordAsk: options.recordAsk,
 		memoryAccess: options.memoryAccess,
 		web: options.web,
 		onFailure: options.onFailure,
