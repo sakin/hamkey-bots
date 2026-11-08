@@ -6,7 +6,7 @@ export type BotKind = "personal" | "household" | "common";
 export type BotSummary = { id: string; name: string; kind: BotKind; shared: boolean; editable: boolean; /** The Bot reads the web, so its answers need checking. */ web?: boolean; warning?: string };
 export type BotDefinition = BotSummary & { instructions: string; model: string | null; tools: string[] };
 export type BotForm = { name: string; instructions: string; model: string | null; tools: string[]; kind: BotKind };
-export type Catalog = { models: { id: string; name: string }[]; defaultModel: string; tools: string[] };
+export type Catalog = { models: { id: string; name: string }[]; defaultModel: string; tools: string[]; /** Ticked for a new Bot. */ defaultTools: string[] };
 
 /** Development only: pick which Member to act as when the server runs with a development identity. */
 const DEV_KEY = "hamkey.devMember";

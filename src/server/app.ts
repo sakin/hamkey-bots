@@ -7,7 +7,7 @@ import { bodyLimit } from "hono/body-limit";
 import { streamSSE } from "hono/streaming";
 import { type Bot, type BotKind, type BotInput, type Bots, InvalidBot } from "./bots.ts";
 import type { ChatEngine, ThreadView } from "./chat/engine.ts";
-import { BOT_TOOLS } from "./memory/access.ts";
+import { BOT_TOOLS, DEFAULT_TOOLS } from "./memory/access.ts";
 import { resolveMember } from "./identity.ts";
 import type { Member } from "./members.ts";
 import type { DailySpend } from "./spend.ts";
@@ -77,13 +77,13 @@ export function createApp(options: AppOptions): Server {
 		...summary(bot),
 		instructions: bot.instructions,
 		model: bot.model ?? null,
-		tools: bot.tools ?? [...BOT_TOOLS],
+		tools: bot.tools ?? [...DEFAULT_TOOLS],
 	});
 
 	api.get("/bots", (c) => c.json({ bots: bots.listFor(c.get("member")).map(summary) }));
 
 	api.get("/models", (c) =>
-		c.json({ models: engine.listModels(), defaultModel: engine.defaultModel, tools: BOT_TOOLS }),
+		c.json({ models: engine.listModels(), defaultModel: engine.defaultModel, tools: BOT_TOOLS, defaultTools: DEFAULT_TOOLS }),
 	);
 
 	/** Reads what a Member may set from a request body, or says what is wrong. */
