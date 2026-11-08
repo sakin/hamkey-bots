@@ -2,6 +2,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { Bots, loadBots } from "./bots.ts";
 import { CardStore } from "./card-store.ts";
+import { Exposure } from "./exposure.ts";
 import { createApp, listenLocal } from "./app.ts";
 import { openOpenRouterEngine } from "./chat/openrouter.ts";
 import { loadConfig } from "./config.ts";
@@ -22,6 +23,7 @@ const members = await loadMembers(config.dataDir);
 
 const memory = new FileMemory(config.dataDir);
 const cards = new CardStore(config.dataDir);
+const exposure = new Exposure(config.dataDir);
 const bots = new Bots(await loadBots(config.dataDir, members), members, config.dataDir);
 
 // The limit reads the engine's totals and the engine asks the limit before each request, so one is bound late.
@@ -33,6 +35,8 @@ const engine = await openOpenRouterEngine({
 	memory,
 	cards,
 	learned: new LearnedNotes(config.dataDir),
+	exposure,
+	botName: (id) => bots.name(id),
 	memoryAccess: (binding) => bots.memoryAccess(binding),
 	storagePath: join(config.dataDir, "hamkey.sqlite"),
 	modelId: config.model.modelId,
@@ -48,6 +52,7 @@ const server = createApp({
 	spend,
 	memory,
 	cards,
+	exposure,
 	engine,
 	bots,
 	threads: new Threads(config.dataDir, engine, bots),

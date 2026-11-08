@@ -1,6 +1,7 @@
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import type { LearnedNotes } from "../memory/learned-notes.ts";
 import type { CardStore } from "../card-store.ts";
+import type { Exposure } from "../exposure.ts";
 import type { Memory } from "../memory/memory.ts";
 import type { ChatEngine, RequestGate } from "./engine.ts";
 import type { AccessResolver } from "./memory-tools.ts";
@@ -18,6 +19,8 @@ export function openOpenRouterEngine(options: {
 	memory: Memory;
 	cards: CardStore;
 	learned: LearnedNotes;
+	exposure: Exposure;
+	botName: (botId: string) => string | undefined;
 	memoryAccess: AccessResolver;
 	web: WebAccess;
 	gate?: RequestGate;
@@ -32,6 +35,8 @@ export function openOpenRouterEngine(options: {
 		memory: options.memory,
 		cards: options.cards,
 		learned: options.learned,
+		exposure: options.exposure,
+		botName: options.botName,
 		memoryAccess: options.memoryAccess,
 		web: options.web,
 		onFailure: options.onFailure,

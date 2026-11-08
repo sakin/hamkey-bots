@@ -9,7 +9,8 @@ import { type Bot, type BotKind, type BotInput, type Bots, InvalidBot } from "./
 import type { ChatEngine, ThreadView } from "./chat/engine.ts";
 import { BOT_TOOLS, DEFAULT_TOOLS } from "./memory/access.ts";
 import type { Card, CardStore } from "./card-store.ts";
-import { topicLabel } from "./memory/topics.ts";
+import { Exposure, InvalidExposure } from "./exposure.ts";
+import { TOPICS, topicLabel } from "./memory/topics.ts";
 import type { Memory } from "./memory/memory.ts";
 import { resolveMember } from "./identity.ts";
 import type { Member } from "./members.ts";
@@ -24,6 +25,7 @@ export type AppOptions = {
 	threads: Threads;
 	memory: Memory;
 	cards: CardStore;
+	exposure: Exposure;
 	/** The daily spend limit; new messages are refused once it is reached. */
 	spend: DailySpend;
 	devIdentity?: string;
@@ -37,7 +39,7 @@ const KEEP_ALIVE_MS = 25_000;
 
 /** Builds the HTTP server. It does not listen; `listenLocal` does, and only on the loopback interface. */
 export function createApp(options: AppOptions): Server {
-	const { engine, threads, bots, cards, memory } = options;
+	const { engine, threads, bots, cards, memory, exposure } = options;
 
 	const api = new Hono<Env>();
 
@@ -91,6 +93,36 @@ export function createApp(options: AppOptions): Server {
 		c.json({ models: engine.listModels(), defaultModel: engine.defaultModel, tools: BOT_TOOLS, defaultTools: DEFAULT_TOOLS }),
 	);
 
+	const FORM_LIMIT = bodyLimit({ maxSize: MAX_BODY, onError: (c) => c.json({ error: "Too large" }, 413) });
+
+	/**
+	 * The requesting Member's own Exposure List, with the Topics and Bots it can name. There is no way to name another
+	 * Member: the list is always the one of the Member the server resolved from the request's identity.
+	 */
+	const exposureView = async (member: Member) => ({
+		exposure: await exposure.get(member.id),
+		topics: TOPICS,
+		bots: bots.askers().map((b) => ({ id: b.id, name: b.name, kind: b.kind })),
+	});
+
+	api.use("/exposure", async (c, next) => {
+		await bots.reload();
+		await next();
+	});
+
+	api.get("/exposure", async (c) => c.json(await exposureView(c.get("member"))));
+
+	api.put("/exposure", FORM_LIMIT, async (c) => {
+		const body = await c.req.json().catch(() => undefined);
+		try {
+			await exposure.set(c.get("member").id, body?.exposure, bots.askers().map((b) => b.id));
+		} catch (error) {
+			if (error instanceof InvalidExposure) return c.json({ error: error.message }, 400);
+			throw error;
+		}
+		return c.json(await exposureView(c.get("member")));
+	});
+
 	/** Reads what a Member may set from a request body, or says what is wrong. */
 	function readInput(body: unknown): BotInput | string {
 		const b = (body ?? {}) as Record<string, unknown>;
@@ -105,8 +137,6 @@ export function createApp(options: AppOptions): Server {
 		}
 		return input;
 	}
-
-	const FORM_LIMIT = bodyLimit({ maxSize: MAX_BODY, onError: (c) => c.json({ error: "Too large" }, 413) });
 
 	api.post("/bots", FORM_LIMIT, async (c) => {
 		const body = await c.req.json().catch(() => undefined);

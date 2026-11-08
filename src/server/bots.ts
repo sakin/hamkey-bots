@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { Member } from "./members.ts";
 import { accessFor, type MemoryAccess, BOT_TOOLS } from "./memory/access.ts";
 import { primaryBotFor } from "./primary-bot.ts";
-import { researchBot } from "./research-bot.ts";
+import { researchBot, RESEARCH_BOT_ID } from "./research-bot.ts";
 
 export type BotKind = "personal" | "household" | "common";
 
@@ -254,6 +254,20 @@ export class Bots {
 	memoryAccess(binding: { botId: string; memberId: string | null }): MemoryAccess | undefined {
 		const bot = this.#bots.find((b) => b.id === binding.botId);
 		return bot === undefined ? undefined : accessFor(bot, binding.memberId ?? undefined);
+	}
+
+	/** A Bot's name as defined now, whoever it belongs to. For server-built text only; it is never offered to a Member. */
+	name(id: string): string | undefined {
+		return this.#bots.find((b) => b.id === id)?.name;
+	}
+
+	/**
+	 * The Bots a Member may let Ask about their Topics: Household and Common Bots, which both Members can see. Personal
+	 * Bots are left out so that one Member's list never shows the name of a Bot the other keeps private, and the
+	 * Research Bot is left out because it has no use for personal information.
+	 */
+	askers(): Bot[] {
+		return this.#bots.filter((b) => b.kind !== "personal" && b.id !== RESEARCH_BOT_ID);
 	}
 
 	/** The Member's Bots: the Primary Bot, then the Research Bot, then the rest. */

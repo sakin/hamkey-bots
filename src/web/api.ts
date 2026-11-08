@@ -173,3 +173,34 @@ export async function actOnCard(cardId: string, action: { action: "approve" | "r
 		return "Could not reach the server. Try again.";
 	}
 }
+
+export type ExposureView = {
+	/** Topic id to the ids of the Bots allowed to Ask about it. */
+	exposure: Record<string, string[]>;
+	topics: { id: string; label: string }[];
+	bots: { id: string; name: string; kind: BotKind }[];
+};
+
+export async function fetchExposure(): Promise<ExposureView | undefined> {
+	try {
+		const res = await fetch("/api/exposure", { headers: headers() });
+		return res.ok ? res.json() : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+/** Saves the Member's own Exposure List. Returns the saved list, or the reason it was refused. */
+export async function saveExposure(exposure: Record<string, string[]>): Promise<{ view: ExposureView } | { error: string }> {
+	try {
+		const res = await fetch("/api/exposure", {
+			method: "PUT",
+			headers: { ...headers(), "content-type": "application/json" },
+			body: JSON.stringify({ exposure }),
+		});
+		const body = await res.json().catch(() => ({}));
+		return res.ok ? { view: body } : { error: body.error ?? "Could not save." };
+	} catch {
+		return { error: "Could not reach the server." };
+	}
+}

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, tick } from "svelte";
 	import BotEditor from "./BotEditor.svelte";
+	import ExposureEditor from "./ExposureEditor.svelte";
 	import { actOnCard, devMember, fetchBots, fetchMe, followThread, sendMessage, setDevMember, type BotDefinition, type BotSummary, type Me, type Card, type ChatMessage, type ThreadView } from "./api.ts";
 
 	let me = $state<Me | undefined>();
@@ -35,7 +36,7 @@
 	/** Why the last message could not be sent, such as the daily spend limit. */
 	let sendError = $state<string | undefined>();
 	/** What the form is doing: nothing, creating a Bot, or editing the current one. */
-	let editing = $state<"create" | "edit" | undefined>();
+	let editing = $state<"create" | "edit" | "exposure" | undefined>();
 	/** Why the last tap on a Card was refused. */
 	let cardError = $state<string | undefined>();
 	let scroller: HTMLElement | undefined = $state();
@@ -127,6 +128,9 @@
 		</div>
 		<div class="flex items-center gap-2">
 			{#if !online}<span class="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">Reconnecting…</span>{/if}
+			{#if !editing}
+				<button type="button" onclick={() => (editing = "exposure")} class="rounded border border-gray-300 px-2 py-1 text-xs">Sharing</button>
+			{/if}
 			{#if bot?.editable && !editing}
 				<button type="button" onclick={() => (editing = "edit")} class="rounded border border-gray-300 px-2 py-1 text-xs">Edit</button>
 			{/if}
@@ -176,7 +180,9 @@
 		{#if botsFailed}
 			<p class="px-4 py-2 text-center text-sm text-red-600" role="alert">Could not load your Bots. Reload to try again.</p>
 		{/if}
-		{#if editing}
+		{#if editing === "exposure"}
+			<ExposureEditor ondone={() => (editing = undefined)} />
+		{:else if editing}
 			{#key `${editing}:${botId}`}
 				<BotEditor botId={editing === "edit" ? botId : undefined} onsaved={saved} oncancel={() => (editing = undefined)} />
 			{/key}
