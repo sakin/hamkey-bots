@@ -41,7 +41,7 @@ The one thread a Household Bot has, which both Members write in. Each message sh
 _Avoid_: Group chat
 
 **Seeded Bot**:
-A Bot that Hamkey ships as a starting point, such as the meal planner. Seeded describes where a Bot came from; it gives the Bot no special status over Bots the Members create.
+A Bot that Hamkey ships as a starting point, such as the meal planner. Each is copied into a data folder once, the first time Hamkey starts there, and never overwritten; after that it is an ordinary Bot file the Members own, edit or delete, and a deleted one does not come back. Seeded describes where a Bot came from; it gives the Bot no special status over Bots the Members create.
 _Avoid_: Default bot, built-in bot
 
 **Common Bot**:

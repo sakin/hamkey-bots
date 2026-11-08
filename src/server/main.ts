@@ -7,6 +7,7 @@ import { Exposure } from "./exposure.ts";
 import { createApp, listenLocal } from "./app.ts";
 import { openOpenRouterEngine } from "./chat/openrouter.ts";
 import { loadConfig } from "./config.ts";
+import { seedBots } from "./seed.ts";
 import { LearnedNotes } from "./memory/learned-notes.ts";
 import { FileMemory } from "./memory/file-memory.ts";
 import { loadMembers } from "./members.ts";
@@ -21,6 +22,7 @@ if (!process.env.BRAVE_SEARCH_API_KEY) console.warn("BRAVE_SEARCH_API_KEY is not
 
 await mkdir(config.dataDir, { recursive: true });
 const members = await loadMembers(config.dataDir);
+for (const id of await seedBots(config.dataDir)) console.log(`Seeded Bot ${id} added to ${join(config.dataDir, "bots")}.`);
 
 const memory = new FileMemory(config.dataDir);
 const cards = new CardStore(config.dataDir);
