@@ -7,3 +7,5 @@ Nothing waits inside a tool call, so `beforeTool` is not used to hold for an ans
 Cards live in a Hamkey file store, not in Pi documents, because they are addressed to Members across threads and badges and push need "what waits for Member M", which a conversation's own documents cannot answer. Cards in a thread are matched by thread id, and each Member sees only Cards addressed to them.
 
 A Fact is shared by setting a Topic on it in the Memory module (`setTopic`, called only by the server). Asks later read `listShared(scope, topic)`. Only a Member's personal Facts can be shared; household Facts are already shared with both Members.
+
+`test/restart-recovery.test.ts` checks this against a real kill: a Card posted by a Bot is still waiting after the server is killed with SIGKILL, and a tap on it afterwards still shares the Fact or reaches the Bot.

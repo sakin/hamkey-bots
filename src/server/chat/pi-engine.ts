@@ -1,11 +1,11 @@
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
 import { createModels, type Provider } from "@earendil-works/pi-ai";
-import { type CompactionSettings, createRegistry, Harness } from "@earendil-works/pi-durable";
+import { type CompactionSettings, createRegistry, Harness, type Extension } from "@earendil-works/pi-durable";
 import type { LearnedNotes } from "../memory/learned-notes.ts";
 import type { Memory } from "../memory/memory.ts";
 import { type AccessResolver, BindingDoc, memoryExtension } from "./memory-tools.ts";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
-import type { Author, ChatEngine, ChatMessage, RequestGate, ThreadId, ThreadSpec, ThreadView } from "./engine.ts";
+import type { Author, ChatEngine, ParkedTask, ChatMessage, RequestGate, ThreadId, ThreadSpec, ThreadView } from "./engine.ts";
 import { gatedProvider } from "./gated-provider.ts";
 import { sharedThreadExtension } from "./shared-thread.ts";
 import type { WebAccess } from "../web/web-access.ts";
@@ -48,6 +48,13 @@ export type PiEngineOptions = {
 	memoryAccess: AccessResolver;
 	/** The web, for the Research Bot's tools alone (ADR 0004). */
 	web: WebAccess;
+	/**
+	 * Test-only: more extensions to install. Their tools are offered to a thread when its Bot's access lists them by
+	 * name, so a test can add a tool that records or blocks, to prove what a crash does to a tool that is not replay-safe.
+	 */
+	extensions?: readonly Extension[];
+	/** How many crashes in a row park a task until a Member retries it. Pi Durable's default (5) when absent; tests lower it. */
+	restartLimit?: number;
 	/** Called once if the store fails and the runtime shuts itself down; the process should exit so it is restarted. */
 	onFailure?: (error: unknown) => void;
 };
@@ -113,6 +120,7 @@ export async function openPiEngine(options: PiEngineOptions): Promise<ChatEngine
 	const cardTools = cardsExtension(options.memory, options.cards, options.members, options.memoryAccess);
 	registry.install(cardTools);
 	registry.install(sharedThreadExtension(options.members));
+	for (const extension of options.extensions ?? []) registry.install(extension);
 	// Refusals the gate gave, so a run that failed on one shows the Member its words rather than a generic error.
 	const refusals = new Set<string>();
 	const gate: RequestGate = async () => {
@@ -122,15 +130,18 @@ export async function openPiEngine(options: PiEngineOptions): Promise<ChatEngine
 	};
 	const models = createModels();
 	models.setProvider(gatedProvider(options.provider, gate));
+	const storage = await openNodeSqliteStorage(options.storagePath);
 	const harness = await Harness.open(
-		await openNodeSqliteStorage(options.storagePath),
+		storage,
 		{
 			models,
 			registry,
-			settings: { followUpMode: "all", afterFailedRun: "continue", compaction: { enabled: true, ...options.compaction } },
+			settings: { followUpMode: "all", afterFailedRun: "continue", restartLimit: options.restartLimit, compaction: { enabled: true, ...options.compaction } },
 		},
 		context,
 	);
+	// Recovery: work the last process left unfinished (a model request, a tool call, a research or Ask child) continues
+	// from its last checkpoint. Tools that are not replay-safe are not run again; the model is told they were interrupted.
 	harness.resume();
 	void harness.closed.then((end) => {
 		if (end.reason === "failed") options.onFailure?.(end.error);
@@ -146,7 +157,7 @@ export async function openPiEngine(options: PiEngineOptions): Promise<ChatEngine
 		return {
 			model: { provider: options.model.provider, modelId: spec.model ?? options.model.modelId },
 			instructions: spec.instructions,
-			tools: [...(memoryTools.tools ?? []), ...(webTools.tools ?? []), ...(researchTool.tools ?? []), ...(askTool.tools ?? []), ...(cardTools.tools ?? [])].filter((t) => offered.includes(t.name)),
+			tools: [...(memoryTools.tools ?? []), ...(webTools.tools ?? []), ...(researchTool.tools ?? []), ...(askTool.tools ?? []), ...(cardTools.tools ?? []), ...(options.extensions ?? []).flatMap((e) => e.tools ?? [])].filter((t) => offered.includes(t.name)),
 		};
 	}
 
@@ -165,6 +176,31 @@ export async function openPiEngine(options: PiEngineOptions): Promise<ChatEngine
 		} finally {
 			state.dispose();
 		}
+	}
+
+	/**
+	 * The thread a conversation belongs to: itself, or the thread whose tool call (research, Ask) owns it. Walks the
+	 * owner links Pi Durable keeps, so a task parked inside a child is found from its caller's thread.
+	 */
+	async function threadOf(id: string): Promise<string> {
+		let current = id;
+		for (let depth = 0; depth < 8; depth++) {
+			const found = await harness.conversation(current as never, context);
+			if (found === undefined) return current;
+			const state = await found.viewState(context);
+			const owner = (state.value as unknown as { conversation: { owner?: { conversationId: string } } }).conversation.owner;
+			state.dispose();
+			if (owner === undefined) return current;
+			current = String(owner.conversationId);
+		}
+		return current;
+	}
+
+	async function parkedTasks(thread: ThreadId): Promise<ParkedTask[]> {
+		const parked = (await harness.inspect(context)).tasks.filter((t) => t.state.kind === "blocked" && t.state.reason === "restart_limit");
+		const found: ParkedTask[] = [];
+		for (const task of parked) if ((await threadOf(task.record.conversationId as unknown as string)) === thread) found.push({ id: String(task.record.id) });
+		return found;
 	}
 
 	/** Adds an input to a thread and, when its run settles, tells the thread's watchers if it ended without an answer. */
@@ -232,6 +268,25 @@ export async function openPiEngine(options: PiEngineOptions): Promise<ChatEngine
 		},
 
 		view,
+
+		parkedTasks,
+
+		async conversationCount() {
+			let count = 0;
+			let cursor;
+			do {
+				const page: Awaited<ReturnType<typeof storage.scanConversations>> = await storage.scanConversations({}, 100, cursor, context);
+				count += page.items.length;
+				cursor = page.next;
+			} while (cursor !== undefined);
+			return count;
+		},
+
+		async retryParked(thread) {
+			const parked = await parkedTasks(thread);
+			for (const task of parked) await harness.retryTask(task.id as never, context);
+			return parked.length;
+		},
 
 		async subscribe(thread, listener) {
 			const state = await (await conversation(thread)).viewState(context);

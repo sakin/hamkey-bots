@@ -19,10 +19,15 @@ export type ThreadView = {
 	busy: boolean;
 	/** Set when the last run failed without an answer. */
 	error?: string;
+	/** True when the thread's work stopped after repeated crashes and waits for a Member to retry it. Added by the server. */
+	stuck?: boolean;
 };
 
 /** What a new thread needs. `memberId` is set unless the thread is a Household Bot's shared one. */
 export type ThreadSpec = { instructions: string; botId: string; memberId?: string; /** Model id; absent means the engine's default. */ model?: string };
+
+/** A piece of work the engine stopped retrying after repeated crashes. It waits for a Member to retry it. */
+export type ParkedTask = { id: string };
 
 export type ModelInfo = { id: string; name: string };
 
@@ -51,6 +56,15 @@ export interface ChatEngine {
 	 */
 	sendCardAction(thread: ThreadId, text: string, requestId: string, action: { card: string; action: string; by: string }): Promise<void>;
 	view(thread: ThreadId): Promise<ThreadView>;
+	/**
+	 * The work in this thread, including its research and Ask calls, that was parked after crashing the server repeatedly.
+	 * A thread with any is stuck: it will not move until `retryParked`.
+	 */
+	parkedTasks(thread: ThreadId): Promise<ParkedTask[]>;
+	/** How many conversations the store holds: threads, plus one for each research request and Ask. Lets a test show a rerun made no second one. */
+	conversationCount(): Promise<number>;
+	/** Runs the thread's parked work again. Returns how many tasks were retried. */
+	retryParked(thread: ThreadId): Promise<number>;
 	/** Calls `listener` with the current view, then after every commit. Returns an unsubscribe function. */
 	subscribe(thread: ThreadId, listener: (view: ThreadView) => void): Promise<() => void>;
 	/** US dollars spent on models and tools across every thread since the store began, failed and aborted attempts included. */

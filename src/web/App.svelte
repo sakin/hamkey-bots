@@ -3,7 +3,7 @@
 	import BotEditor from "./BotEditor.svelte";
 	import AskLog from "./AskLog.svelte";
 	import ExposureEditor from "./ExposureEditor.svelte";
-	import { actOnCard, devMember, fetchBots, fetchMe, followThread, sendMessage, setDevMember, type BotDefinition, type BotSummary, type Me, type ThreadView } from "./api.ts";
+	import { actOnCard, devMember, fetchBots, fetchMe, followThread, retryThread, sendMessage, setDevMember, type BotDefinition, type BotSummary, type Me, type ThreadView } from "./api.ts";
 
 	let me = $state<Me | undefined>();
 	let refused = $state(false);
@@ -236,7 +236,12 @@
 				</section>
 			{/each}
 			{#if cardError}<p class="text-center text-sm text-red-600" role="alert">{cardError}</p>{/if}
-			{#if view.busy}
+			{#if view.stuck}
+				<div class="flex flex-col items-center gap-2 text-sm text-red-600" role="alert">
+					<p>This conversation stopped after repeated crashes.</p>
+					<button type="button" onclick={async () => (sendError = botId === undefined ? undefined : await retryThread(botId))} class="rounded-lg border border-gray-300 px-3 py-2 text-gray-900">Retry</button>
+				</div>
+			{:else if view.busy}
 				<div class="flex justify-start">
 					<p class="max-w-[85%] whitespace-pre-wrap rounded-2xl bg-gray-100 px-3.5 py-2 text-sm leading-relaxed text-gray-900">
 						{view.draft ?? "…"}

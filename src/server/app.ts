@@ -189,6 +189,8 @@ export function createApp(options: AppOptions): Server {
 	/** Names each message's sender: a Member for the messages they wrote, the Bot for its replies. Adds the thread's Cards this Member may see. */
 	const present = async (view: ThreadView, bot: Bot, thread: string, viewer: Member) => ({
 		...view,
+		// Work parked after repeated crashes would sit busy forever, so the Member is told and offered a retry.
+		stuck: (await engine.parkedTasks(thread)).length > 0 ? true : undefined,
 		messages: view.messages.map(({ author, ...m }) => {
 			const member = author === undefined ? undefined : options.members.find((x) => x.id === author);
 			const sender = m.role === "assistant" ? { id: bot.id, name: bot.name } : member && { id: member.id, name: member.name };
@@ -304,6 +306,16 @@ export function createApp(options: AppOptions): Server {
 			return c.json({ ok: true }, 202);
 		},
 	);
+
+	/**
+	 * Runs a stuck thread's parked work again. Behind the same ownership check as messages: a Bot the Member may not use
+	 * answers 404, and a thread with nothing parked answers 409.
+	 */
+	api.post("/bots/:bot/retry", async (c) => {
+		const found = await threads.mainThread(c.get("member"), c.req.param("bot"));
+		if (found === undefined) return notFound(c);
+		return (await engine.retryParked(found.thread)) === 0 ? c.json({ error: "Nothing is stuck" }, 409) : c.json({ ok: true }, 202);
+	});
 
 	api.get("/bots/:bot/events", async (c) => {
 		const found = await threads.mainThread(c.get("member"), c.req.param("bot"));
