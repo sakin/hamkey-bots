@@ -3,11 +3,31 @@
 	import BotEditor from "./BotEditor.svelte";
 	import AskLog from "./AskLog.svelte";
 	import ExposureEditor from "./ExposureEditor.svelte";
-	import { actOnCard, devMember, fetchBots, fetchMe, followThread, retryThread, sendMessage, setDevMember, type BotDefinition, type BotSummary, type Me, type ThreadView } from "./api.ts";
+	import { actOnCard, devMember, fetchBots, fetchMe, followThread, retryThread, sendMessage, setDevMember, type BotDefinition, type BotSummary, type Me, type Card, type ChatMessage, type ThreadView } from "./api.ts";
 
 	let me = $state<Me | undefined>();
 	let refused = $state(false);
 	let view = $state<ThreadView>({ messages: [], busy: false });
+	/**
+	 * Messages with each Card placed after the last message written before it was posted, so a reply to a Card
+	 * comes after the Card. Messages without a time (old threads) keep their order, and Cards go last.
+	 */
+	const timeline = $derived.by(() => {
+		const items: ({ message: ChatMessage; card?: undefined } | { card: Card; message?: undefined })[] = view.messages.map((message) => ({ message }));
+		for (const card of [...(view.cards ?? [])].sort((a, b) => Date.parse(a.createdAt ?? "") - Date.parse(b.createdAt ?? ""))) {
+			const t = Date.parse(card.createdAt ?? "");
+			let at = items.length;
+			if (!Number.isNaN(t)) {
+				at = 0;
+				items.forEach((item, i) => {
+					if (item.message?.at !== undefined && item.message.at <= t) at = i + 1;
+				});
+				if (!items.some((item) => item.message?.at !== undefined)) at = items.length;
+			}
+			items.splice(at, 0, { card });
+		}
+		return items;
+	});
 	let bots = $state<BotSummary[]>([]);
 	let botsFailed = $state(false);
 	let botId = $state<string | undefined>();
@@ -178,7 +198,9 @@
 			{#if view.messages.length === 0 && !view.draft}
 				<p class="pt-8 text-center text-sm text-gray-400">Say hello to start the conversation.</p>
 			{/if}
-			{#each view.messages as message (message.id)}
+			{#each timeline as item (item.card ? `card:${item.card.id}` : item.message.id)}
+				{#if item.message}
+				{@const message = item.message}
 				<!-- In a shared thread the other Member's messages are not mine, so the side follows the sender. -->
 				{@const mine = message.role === "user" && (message.sender === undefined || message.sender.id === me?.member.id)}
 				<div class="flex flex-col {mine ? 'items-end' : 'items-start'}">
@@ -194,8 +216,8 @@
 					</p>
 					{#if message.untrusted}<span class="mt-0.5 px-1 text-xs text-amber-700">from the web</span>{/if}
 				</div>
-			{/each}
-			{#each view.cards ?? [] as card (card.id)}
+				{:else if item.card}
+				{@const card = item.card}
 				<!-- Card text is plain text from the Bot, so it is interpolated, never inserted as HTML. -->
 				<section class="max-w-[85%] space-y-2 rounded-2xl border border-gray-300 bg-white px-3.5 py-3 text-sm shadow-sm" aria-label="{card.type === 'approval' ? 'Approval' : card.type === 'question' ? 'Question' : 'Choice'} card">
 					{#if card.type === "question"}
@@ -234,6 +256,7 @@
 						{/if}
 					{/if}
 				</section>
+				{/if}
 			{/each}
 			{#if cardError}<p class="text-center text-sm text-red-600" role="alert">{cardError}</p>{/if}
 			{#if view.stuck}
