@@ -16,6 +16,7 @@ import { LearnedNotes } from "../src/server/memory/learned-notes.ts";
 import { FileMemory } from "../src/server/memory/file-memory.ts";
 import type { CompactionSettings } from "../src/server/chat/pi-engine.ts";
 import { DailySpend } from "../src/server/spend.ts";
+import { seedBots } from "../src/server/seed.ts";
 import { Threads } from "../src/server/threads.ts";
 import { FakeWeb } from "./fake-web.ts";
 import type { WebAccess } from "../src/server/web/web-access.ts";
@@ -35,9 +36,11 @@ export async function startHamkey(options: { devIdentity?: string; webDir?: stri
 	const dataDir = options.dataDir ?? (await mkdtemp(join(tmpdir(), "hamkey-test-")));
 	if (options.dataDir === undefined) {
 		await writeFile(join(dataDir, "members.json"), JSON.stringify([ann, ben]));
-		// The example Bots in the repository double as fixtures: they are what a live data folder's `bots` folder looks like.
+		// The example Bots in the repository are fixtures: what a Member-made `bots` folder looks like.
 		await cp(new URL("../examples/bots", import.meta.url), join(dataDir, "bots"), { recursive: true });
 	}
+	// Seeded Bots, such as the meal planner, arrive the way they do in a real data folder. Safe on a restart.
+	await seedBots(dataDir);
 	for (const bot of options.extraBots ?? []) {
 		await writeFile(join(dataDir, "bots", `${(bot as { id: string }).id}.json`), JSON.stringify(bot));
 	}

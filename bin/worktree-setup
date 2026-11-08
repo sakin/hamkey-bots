@@ -5,7 +5,7 @@
 #   2. Gives the worktree its own ports, derived from its branch name, written to .env.local.
 #   3. Installs dependencies if they are missing.
 #
-# Bots come from the main checkout's data/bots, or from examples/bots when it has none.
+# Bots come from the main checkout's data/bots; the server seeds the rest (seeds/bots) on first start.
 # The conversation database is deliberately NOT copied: each worktree starts with its own data/.
 set -euo pipefail
 
@@ -32,18 +32,14 @@ echo "worktree-setup: $top (main checkout: $main)"
 copy_if_missing mise.local.toml 600
 copy_if_missing data/members.json 644
 
-# Bots: take the main checkout's live Bots when it has any. Otherwise seed the Bots that belong to nobody in particular
-# from the examples (a personal example names a Member who may not exist here, so it is left out).
-if [ -d "$main/data/bots" ] && compgen -G "$main/data/bots/*.json" >/dev/null; then
-	for f in "$main"/data/bots/*.json; do copy_if_missing "data/bots/$(basename "$f")" 644; done
-elif [ ! -d data/bots ]; then
-	mkdir -p data/bots
-	for f in examples/bots/*.json; do
-		if grep -q '"kind": "personal"' "$f"; then continue; fi
-		cp "$f" "data/bots/$(basename "$f")"
-		echo "  seed   data/bots/$(basename "$f") (from examples)"
+# Bots: take the main checkout's live Bots when it has any. Seeded Bots (seeds/bots) are added by the server at startup.
+if [ -d "$main/data/bots" ]; then
+	for f in "$main"/data/bots/*.json; do
+		if [ -e "$f" ]; then copy_if_missing "data/bots/$(basename "$f")" 644; fi
 	done
 fi
+# seeded.json says which Seeded Bots were already offered, so a Bot deleted in the main checkout stays deleted here.
+copy_if_missing data/seeded.json 644
 
 # Two ports per worktree, from a hash of the branch name: the server on an even port, the web app on the next.
 # Same branch, same ports, every time. Two branches can collide in theory (1 in 5000); change the branch name if so.

@@ -175,7 +175,7 @@ describe("only the right facts and Bots", () => {
 		hamkey = await startHamkey();
 		const fact = await hamkey.memory.saveFact(household, "We eat at 7");
 		const planner = await say(hamkey, hamkey.ann, "Share", [call("suggest_sharing", { fact_id: fact.id, topic: "dietary-needs" })], "meal-planner");
-		expect(planner.prompts[0]).toContain("Tools you do not have: research, suggest_sharing");
+		expect(planner.prompts[0]).toContain("Tools you do not have: suggest_sharing");
 		expect(await waiting(hamkey.ann)).toEqual([]);
 		expect(await hamkey.memory.listShared(household, "dietary-needs")).toEqual([]);
 	});

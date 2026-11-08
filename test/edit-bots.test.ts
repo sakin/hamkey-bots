@@ -133,7 +133,7 @@ describe("editing a Bot", () => {
 		hamkey = await startHamkey();
 		const def = await (await hamkey.ann.get("/api/bots/meal-planner/definition")).json();
 		expect(def).toMatchObject({ id: "meal-planner", kind: "household", editable: true, model: null });
-		expect(def.instructions).toContain("grocery list");
+		expect(def.instructions).toContain("plan the household");
 		expect(def.tools).toEqual(expect.arrayContaining(["memory_save"]));
 	});
 });
