@@ -11,9 +11,13 @@ import { sharedThreadExtension } from "./shared-thread.ts";
 import type { WebAccess } from "../web/web-access.ts";
 import { researchExtension } from "./research-tool.ts";
 import { webExtension } from "./web-tools.ts";
+import { cardsExtension } from "./card-tools.ts";
+import type { CardStore } from "../card-store.ts";
 
 /** The entry kind of a message sent through Hamkey. It records who wrote it; the model sees the input's `content`. */
 const MESSAGE_KIND = "hamkey.message";
+/** The entry kind of a tap on a Card that the Bot must hear about, such as a Choice Card's pick. */
+const CARD_ACTION_KIND = "hamkey.card-action";
 
 export type { CompactionSettings };
 export type PiEngineOptions = {
@@ -29,6 +33,8 @@ export type PiEngineOptions = {
 	/** Both Members, so a Bot in a shared thread knows who is in it. */
 	members: readonly { id: string; name: string }[];
 	memory: Memory;
+	/** Where Cards the Bots post are kept. */
+	cards: CardStore;
 	learned: LearnedNotes;
 	/** What a Bot may do with memory, as the Bot is defined now. */
 	memoryAccess: AccessResolver;
@@ -85,6 +91,8 @@ export async function openPiEngine(options: PiEngineOptions): Promise<ChatEngine
 		tools: webTools.tools ?? [],
 	});
 	registry.install(researchTool);
+	const cardTools = cardsExtension(options.memory, options.cards, options.members, options.memoryAccess);
+	registry.install(cardTools);
 	registry.install(sharedThreadExtension(options.members));
 	// Refusals the gate gave, so a run that failed on one shows the Member its words rather than a generic error.
 	const refusals = new Set<string>();
@@ -119,7 +127,7 @@ export async function openPiEngine(options: PiEngineOptions): Promise<ChatEngine
 		return {
 			model: { provider: options.model.provider, modelId: spec.model ?? options.model.modelId },
 			instructions: spec.instructions,
-			tools: [...(memoryTools.tools ?? []), ...(webTools.tools ?? []), ...(researchTool.tools ?? [])].filter((t) => offered.includes(t.name)),
+			tools: [...(memoryTools.tools ?? []), ...(webTools.tools ?? []), ...(researchTool.tools ?? []), ...(cardTools.tools ?? [])].filter((t) => offered.includes(t.name)),
 		};
 	}
 
@@ -138,6 +146,29 @@ export async function openPiEngine(options: PiEngineOptions): Promise<ChatEngine
 		} finally {
 			state.dispose();
 		}
+	}
+
+	/** Adds an input to a thread and, when its run settles, tells the thread's watchers if it ended without an answer. */
+	async function submitInput(thread: ThreadId, content: string, entry: { kind: string; data: Record<string, string> }, requestId: string) {
+		const target = await conversation(thread);
+		errors.delete(thread);
+		const submission = await target.submit(
+			{ type: "input", content, entry, requestId },
+			context,
+		);
+		void submission.wait(context).then(
+			(settled) => {
+				// With `afterFailedRun: "continue"` a message queued behind a failed run is still answered. An answer
+				// means the thread is not stuck, so an earlier message's error must not keep showing.
+				if (settled.status === "done") errors.delete(thread);
+				if (settled.status === "unanswered") {
+					const detail = typeof settled.detail === "string" ? settled.detail : undefined;
+					errors.set(thread, detail !== undefined && refusals.has(detail) ? detail : "The Bot could not answer. Try again.");
+				}
+				poke(thread);
+			},
+			() => {},
+		);
 	}
 
 	return {
@@ -174,30 +205,11 @@ export async function openPiEngine(options: PiEngineOptions): Promise<ChatEngine
 		defaultModel: options.model.modelId,
 
 		async send(thread, text, requestId, author: Author, labelled) {
-			const target = await conversation(thread);
-			errors.delete(thread);
-			const submission = await target.submit(
-				{
-					type: "input",
-					content: labelled ? `${author.name}: ${text}` : text,
-					entry: { kind: MESSAGE_KIND, data: { author: author.id, text } },
-					requestId,
-				},
-				context,
-			);
-			void submission.wait(context).then(
-				(settled) => {
-					// With `afterFailedRun: "continue"` a message queued behind a failed run is still answered. An answer
-					// means the thread is not stuck, so an earlier message's error must not keep showing.
-					if (settled.status === "done") errors.delete(thread);
-					if (settled.status === "unanswered") {
-						const detail = typeof settled.detail === "string" ? settled.detail : undefined;
-						errors.set(thread, detail !== undefined && refusals.has(detail) ? detail : "The Bot could not answer. Try again.");
-					}
-					poke(thread);
-				},
-				() => {},
-			);
+			await submitInput(thread, labelled ? `${author.name}: ${text}` : text, { kind: MESSAGE_KIND, data: { author: author.id, text } }, requestId);
+		},
+
+		async sendCardAction(thread, text, requestId, action) {
+			await submitInput(thread, text, { kind: CARD_ACTION_KIND, data: action }, requestId);
 		},
 
 		view,

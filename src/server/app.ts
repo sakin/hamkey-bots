@@ -8,6 +8,9 @@ import { streamSSE } from "hono/streaming";
 import { type Bot, type BotKind, type BotInput, type Bots, InvalidBot } from "./bots.ts";
 import type { ChatEngine, ThreadView } from "./chat/engine.ts";
 import { BOT_TOOLS, DEFAULT_TOOLS } from "./memory/access.ts";
+import type { Card, CardStore } from "./card-store.ts";
+import { topicLabel } from "./memory/topics.ts";
+import type { Memory } from "./memory/memory.ts";
 import { resolveMember } from "./identity.ts";
 import type { Member } from "./members.ts";
 import type { DailySpend } from "./spend.ts";
@@ -19,6 +22,8 @@ export type AppOptions = {
 	engine: ChatEngine;
 	bots: Bots;
 	threads: Threads;
+	memory: Memory;
+	cards: CardStore;
 	/** The daily spend limit; new messages are refused once it is reached. */
 	spend: DailySpend;
 	devIdentity?: string;
@@ -32,7 +37,7 @@ const KEEP_ALIVE_MS = 25_000;
 
 /** Builds the HTTP server. It does not listen; `listenLocal` does, and only on the loopback interface. */
 export function createApp(options: AppOptions): Server {
-	const { engine, threads, bots } = options;
+	const { engine, threads, bots, cards, memory } = options;
 
 	const api = new Hono<Env>();
 
@@ -136,19 +141,85 @@ export function createApp(options: AppOptions): Server {
 		return bot === undefined ? notFound(c) : c.json(definition(bot));
 	});
 
-	/** Names each message's sender: a Member for the messages they wrote, the Bot for its replies. */
-	const present = (view: ThreadView, bot: Bot) => ({
+	/** What a client may know of a Card. The thread it sits in stays on the server. */
+	const cardView = (card: Card, viewer: Member) => ({
+		id: card.id,
+		type: card.type,
+		status: card.status,
+		createdAt: card.createdAt,
+		bot: { id: card.botId, name: bots.find(viewer, card.botId)?.name ?? card.botId },
+		fields: card.type === "approval" ? { ...card.fields, topicLabel: topicLabel((card.fields as { topic: string }).topic) } : card.fields,
+		choice: card.choice,
+		resolvedBy: options.members.find((m) => m.id === card.resolvedBy)?.name,
+	});
+
+	/** Names each message's sender: a Member for the messages they wrote, the Bot for its replies. Adds the thread's Cards this Member may see. */
+	const present = async (view: ThreadView, bot: Bot, thread: string, viewer: Member) => ({
 		...view,
 		messages: view.messages.map(({ author, ...m }) => {
 			const member = author === undefined ? undefined : options.members.find((x) => x.id === author);
 			const sender = m.role === "assistant" ? { id: bot.id, name: bot.name } : member && { id: member.id, name: member.name };
 			return { ...m, sender, untrusted: m.role === "assistant" && bot.id === RESEARCH_BOT_ID ? true : undefined };
 		}),
+		cards: (await cards.inThread(thread, viewer.id)).map((card) => cardView(card, viewer)),
 	});
 
 	api.get("/bots/:bot", async (c) => {
 		const found = await threads.mainThread(c.get("member"), c.req.param("bot"));
-		return found === undefined ? notFound(c) : c.json(present(await engine.view(found.thread), found.bot));
+		return found === undefined ? notFound(c) : c.json(await present(await engine.view(found.thread), found.bot, found.thread, c.get("member")));
+	});
+
+	// What waits for this Member to act, across all their threads. Badges and push are built on this.
+	api.get("/cards", async (c) => {
+		const member = c.get("member");
+		return c.json({ cards: (await cards.waitingFor(member.id)).map((card) => cardView(card, member)) });
+	});
+
+	/**
+	 * A tap on a Card. This is the only way a Card is approved or answered: the Member is the one the server resolved from
+	 * their identity, never a name in the body, and nothing a Bot says reaches here. A Card that is unknown or not theirs
+	 * answers 404 exactly alike.
+	 */
+	api.post("/cards/:card/actions", bodyLimit({ maxSize: 1024, onError: (c) => c.json({ error: "Too large" }, 413) }), async (c) => {
+		const member = c.get("member");
+		const body = await c.req.json().catch(() => undefined);
+		const action = body?.action;
+		if (action !== "approve" && action !== "reject" && action !== "choose") return c.json({ error: "Unknown action" }, 400);
+		const card = await cards.get(c.req.param("card"));
+		if (card === undefined || !card.addressees.includes(member.id)) return notFound(c);
+		if ((card.type === "approval") !== (action !== "choose")) return c.json({ error: "That action does not fit this Card" }, 400);
+		if (card.status !== "waiting") return c.json({ error: "This Card has already been answered" }, 409);
+		const taken = () => c.json({ error: "This Card has already been answered" }, 409);
+
+		if (card.type === "approval") {
+			const fields = card.fields as { fact_id: string; topic: string };
+			if (action === "reject") return (await cards.settle(card.id, "rejected", member.id)) === undefined ? taken() : c.json({ ok: true });
+			// The Fact is looked up in its owner's personal memory only, whatever the Card says.
+			const shared = await memory.setTopic([{ kind: "member", member: card.addressees[0]! }], fields.fact_id, fields.topic);
+			if (!shared) {
+				// The Fact was forgotten since the Card was posted; there is nothing left to share.
+				await cards.settle(card.id, "rejected", member.id);
+				return c.json({ error: "That fact no longer exists, so nothing was shared" }, 409);
+			}
+			return (await cards.settle(card.id, "approved", member.id)) === undefined ? taken() : c.json({ ok: true });
+		}
+
+		const choice = body.option;
+		const fields = card.fields as { question: string; options: string[] };
+		if (!Number.isInteger(choice) || choice < 0 || choice >= fields.options.length) return c.json({ error: "Pick one of the options" }, 400);
+		const found = await threads.mainThread(member, card.botId);
+		if (found === undefined || String(found.thread) !== card.thread) return notFound(c);
+		// The pick wakes the Bot, so it is refused like a message once the daily limit is reached, and the Card stays waiting.
+		const refusal = await options.spend.refusal();
+		if (refusal !== undefined) return c.json({ error: refusal }, 429);
+		if ((await cards.settle(card.id, "chosen", member.id, { choice })) === undefined) return taken();
+		await engine.configure(found.thread, specFor(found.bot, found.memberId));
+		await engine.sendCardAction(found.thread, `${member.name} chose: ${fields.options[choice]} (answering "${fields.question}")`, `card:${card.id}`, {
+			card: card.id,
+			action: "choose",
+			by: member.id,
+		});
+		return c.json({ ok: true });
 	});
 
 	api.post(
@@ -177,13 +248,29 @@ export function createApp(options: AppOptions): Server {
 		const found = await threads.mainThread(c.get("member"), c.req.param("bot"));
 		if (found === undefined) return notFound(c);
 		const { thread, bot } = found;
+		const member = c.get("member");
 		return streamSSE(c, async (stream) => {
+			// A tap changes Cards without the conversation committing anything, so Card changes re-send the latest view too.
+			let latest: ThreadView | undefined;
+			let sending: Promise<unknown> = Promise.resolve();
+			const push = () => {
+				sending = sending
+					.then(async () => {
+						if (latest !== undefined) await stream.writeSSE({ data: JSON.stringify(await present(latest, bot, thread, member)) });
+					})
+					.catch(() => {});
+			};
 			const unsubscribe = await engine.subscribe(thread, (view) => {
-				void stream.writeSSE({ data: JSON.stringify(present(view, bot)) }).catch(() => {});
+				latest = view;
+				push();
+			});
+			const unwatchCards = cards.subscribe((card) => {
+				if (card.thread === String(thread)) push();
 			});
 			const keepAlive = setInterval(() => void stream.write(": keep-alive\n\n").catch(() => {}), KEEP_ALIVE_MS);
 			const release = () => {
 				clearInterval(keepAlive);
+				unwatchCards();
 				unsubscribe();
 			};
 			// The callback must stay pending until the client goes, or the stream closes.

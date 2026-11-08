@@ -86,5 +86,33 @@ export function memoryContract(name: string, create: () => Promise<Memory>) {
 			await Promise.all(Array.from({ length: 20 }, (_, i) => memory.saveFact(household, `fact ${i}`)));
 			expect(await memory.loadSummary([household])).toHaveLength(20);
 		});
+
+		it("keeps facts private until they are shared under a Topic", async () => {
+			const memory = await create();
+			const fact = await memory.saveFact(ann, "Ann is vegetarian");
+			const other = await memory.saveFact(ann, "Ann dislikes mornings");
+			expect(fact.topic).toBeUndefined();
+			expect(await memory.listShared(ann, "dietary-needs")).toEqual([]);
+			expect(await memory.setTopic([ann], fact.id, "dietary-needs")).toBe(true);
+			expect((await memory.listShared(ann, "dietary-needs")).map((f) => f.id)).toEqual([fact.id]);
+			expect((await memory.loadSummary([ann])).find((f) => f.id === fact.id)?.topic).toBe("dietary-needs");
+			// Only that Topic, only that scope, only that fact.
+			expect(await memory.listShared(ann, "evening-availability")).toEqual([]);
+			expect(await memory.listShared(ben, "dietary-needs")).toEqual([]);
+			expect((await memory.loadSummary([ann])).find((f) => f.id === other.id)?.topic).toBeUndefined();
+			// Sharing survives search, and can be taken back.
+			expect((await memory.search([ann], "vegetarian"))[0]?.topic).toBe("dietary-needs");
+			expect(await memory.setTopic([ann], fact.id, undefined)).toBe(true);
+			expect(await memory.listShared(ann, "dietary-needs")).toEqual([]);
+		});
+
+		it("shares only inside the scopes it is given, and not a fact that is gone", async () => {
+			const memory = await create();
+			const bens = await memory.saveFact(ben, "Ben is vegan");
+			expect(await memory.setTopic([ann, household], bens.id, "dietary-needs")).toBe(false);
+			expect(await memory.listShared(ben, "dietary-needs")).toEqual([]);
+			await memory.forget([ben], bens.id);
+			expect(await memory.setTopic([ben], bens.id, "dietary-needs")).toBe(false);
+		});
 	});
 }

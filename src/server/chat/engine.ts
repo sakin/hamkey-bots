@@ -45,6 +45,11 @@ export interface ChatEngine {
 	 * shared by both Members needs; the thread's view always shows the plain text.
 	 */
 	send(thread: ThreadId, text: string, requestId: string, author: Author, labelled: boolean): Promise<void>;
+	/**
+	 * Tells the Bot about a tap on a Card, such as "Ann chose: Pasta", as a structured entry rather than a message from
+	 * the Member. Only the server calls this, after checking the tap.
+	 */
+	sendCardAction(thread: ThreadId, text: string, requestId: string, action: { card: string; action: string; by: string }): Promise<void>;
 	view(thread: ThreadId): Promise<ThreadView>;
 	/** Calls `listener` with the current view, then after every commit. Returns an unsubscribe function. */
 	subscribe(thread: ThreadId, listener: (view: ThreadView) => void): Promise<() => void>;

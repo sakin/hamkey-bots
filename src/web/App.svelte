@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount, tick } from "svelte";
 	import BotEditor from "./BotEditor.svelte";
-	import { devMember, fetchBots, fetchMe, followThread, sendMessage, setDevMember, type BotDefinition, type BotSummary, type Me, type ThreadView } from "./api.ts";
+	import { actOnCard, devMember, fetchBots, fetchMe, followThread, sendMessage, setDevMember, type BotDefinition, type BotSummary, type Me, type ThreadView } from "./api.ts";
 
 	let me = $state<Me | undefined>();
 	let refused = $state(false);
@@ -16,6 +16,8 @@
 	let sendError = $state<string | undefined>();
 	/** What the form is doing: nothing, creating a Bot, or editing the current one. */
 	let editing = $state<"create" | "edit" | undefined>();
+	/** Why the last tap on a Card was refused. */
+	let cardError = $state<string | undefined>();
 	let scroller: HTMLElement | undefined = $state();
 
 	const bot = $derived(bots.find((b) => b.id === botId));
@@ -49,6 +51,7 @@
 		online = true;
 		text = "";
 		sendError = undefined;
+		cardError = undefined;
 		return followThread(
 			id,
 			(v) => (view = v),
@@ -72,6 +75,10 @@
 			if (sendError === undefined) text = "";
 		}
 		sending = false;
+	}
+
+	async function tapCard(cardId: string, action: Parameters<typeof actOnCard>[1]) {
+		cardError = await actOnCard(cardId, action);
 	}
 
 	function onKey(event: KeyboardEvent) {
@@ -178,6 +185,41 @@
 					{#if message.untrusted}<span class="mt-0.5 px-1 text-xs text-amber-700">from the web</span>{/if}
 				</div>
 			{/each}
+			{#each view.cards ?? [] as card (card.id)}
+				<!-- Card text is plain text from the Bot, so it is interpolated, never inserted as HTML. -->
+				<section class="max-w-[85%] space-y-2 rounded-2xl border border-gray-300 bg-white px-3.5 py-3 text-sm shadow-sm" aria-label="{card.type === 'approval' ? 'Approval' : 'Choice'} card">
+					{#if card.type === "approval"}
+						<p class="text-xs font-medium text-gray-500">{card.bot.name} suggests sharing</p>
+						<p class="whitespace-pre-wrap">{card.fields.fact}</p>
+						<p class="text-xs text-gray-600">Topic: <span class="font-medium">{card.fields.topicLabel}</span>. Until you approve, it stays private.</p>
+						{#if card.status === "waiting"}
+							<div class="flex gap-2">
+								<button type="button" onclick={() => tapCard(card.id, { action: "approve" })} class="rounded-lg bg-gray-900 px-3 py-2 text-white">Approve</button>
+								<button type="button" onclick={() => tapCard(card.id, { action: "reject" })} class="rounded-lg border border-gray-300 px-3 py-2">Reject</button>
+							</div>
+						{:else}
+							<p class="text-xs font-medium {card.status === 'approved' ? 'text-emerald-700' : 'text-gray-500'}">
+								{card.status === "approved" ? "Shared" : "Kept private"}
+							</p>
+						{/if}
+					{:else}
+						<p class="whitespace-pre-wrap font-medium">{card.fields.question}</p>
+						<div class="flex flex-wrap gap-2">
+							{#each card.fields.options ?? [] as option, i}
+								{#if card.status === "waiting"}
+									<button type="button" onclick={() => tapCard(card.id, { action: "choose", option: i })} class="rounded-lg border border-gray-300 px-3 py-2">{option}</button>
+								{:else}
+									<span class="rounded-lg border px-3 py-2 {card.choice === i ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 text-gray-400'}">{option}</span>
+								{/if}
+							{/each}
+						</div>
+						{#if card.status === "chosen"}
+							<p class="text-xs text-gray-500">{card.resolvedBy} chose: {card.fields.options?.[card.choice ?? -1]}</p>
+						{/if}
+					{/if}
+				</section>
+			{/each}
+			{#if cardError}<p class="text-center text-sm text-red-600" role="alert">{cardError}</p>{/if}
 			{#if view.busy}
 				<div class="flex justify-start">
 					<p class="max-w-[85%] whitespace-pre-wrap rounded-2xl bg-gray-100 px-3.5 py-2 text-sm leading-relaxed text-gray-900">

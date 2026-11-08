@@ -8,6 +8,7 @@ import type { ThreadView } from "../src/server/chat/engine.ts";
 import type { Member } from "../src/server/members.ts";
 import { TAILSCALE_LOGIN_HEADER } from "../src/server/identity.ts";
 import { Bots, loadBots } from "../src/server/bots.ts";
+import { CardStore } from "../src/server/card-store.ts";
 import { LearnedNotes } from "../src/server/memory/learned-notes.ts";
 import { FileMemory } from "../src/server/memory/file-memory.ts";
 import type { CompactionSettings } from "../src/server/chat/pi-engine.ts";
@@ -38,6 +39,7 @@ export async function startHamkey(options: { devIdentity?: string; webDir?: stri
 		await writeFile(join(dataDir, "bots", `${(bot as { id: string }).id}.json`), JSON.stringify(bot));
 	}
 	const memory = new FileMemory(dataDir);
+	const cards = new CardStore(dataDir);
 	const learned = new LearnedNotes(dataDir);
 	const bots = new Bots(await loadBots(dataDir, [ann, ben]), [ann, ben], dataDir);
 	const faux = fauxProvider({
@@ -56,6 +58,7 @@ export async function startHamkey(options: { devIdentity?: string; webDir?: stri
 		model: { provider: faux.getModel().provider, modelId: faux.getModel().id },
 		members: [ann, ben],
 		memory,
+		cards,
 		learned,
 		compaction: options.compaction,
 		memoryAccess: (binding) => bots.memoryAccess(binding),
@@ -65,6 +68,8 @@ export async function startHamkey(options: { devIdentity?: string; webDir?: stri
 	const server = createApp({
 		members: [ann, ben],
 		spend,
+		memory,
+		cards,
 		engine,
 		bots,
 		threads: new Threads(dataDir, engine, bots),
@@ -131,6 +136,7 @@ export async function startHamkey(options: { devIdentity?: string; webDir?: stri
 	return {
 		dataDir,
 		memory,
+		cards,
 		learned,
 		server,
 		faux,

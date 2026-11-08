@@ -5,6 +5,7 @@ import type { LearnedNotes } from "../memory/learned-notes.ts";
 import { LEARNED_CAP } from "../memory/learned-notes.ts";
 import { BOT_TOOLS, type MemoryAccess } from "../memory/access.ts";
 import type { Fact, Memory } from "../memory/memory.ts";
+import { topicLabel } from "../memory/topics.ts";
 
 /** Who a conversation belongs to. Written once when the thread is created, in the same commit, and never from the model. */
 export type Binding = { botId: string; memberId: string | null };
@@ -24,7 +25,7 @@ export type AccessResolver = (binding: Binding) => MemoryAccess | undefined;
 
 const SUMMARY_FACTS = 50;
 
-const describe = (f: Fact) => `[${f.id}] ${f.text}`;
+const describe = (f: Fact) => `[${f.id}] ${f.text}${f.topic === undefined ? "" : ` (shared under ${topicLabel(f.topic)})`}`;
 const text = (value: string) => ({ output: [{ type: "text" as const, text: value }] });
 
 /**

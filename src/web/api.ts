@@ -1,6 +1,19 @@
 /** `sender` is the Member who wrote a user message, or the Bot for a reply. Old messages may have none. */
 export type ChatMessage = { id: string; role: "user" | "assistant"; text: string; sender?: { id: string; name: string }; /** Set on replies built from web pages. */ untrusted?: boolean };
-export type ThreadView = { messages: ChatMessage[]; draft?: string; busy: boolean; error?: string };
+/** A Card as the server sends it. Every field is plain text and is drawn as text, never as HTML. */
+export type Card = {
+	id: string;
+	type: "approval" | "choice";
+	status: "waiting" | "approved" | "rejected" | "chosen";
+	bot: { id: string; name: string };
+	/** Approval: fact, topic, topicLabel. Choice: question, options. */
+	fields: { fact?: string; topicLabel?: string; question?: string; options?: string[] };
+	/** Index of the option picked on a Choice Card. */
+	choice?: number;
+	/** Name of the Member who tapped. */
+	resolvedBy?: string;
+};
+export type ThreadView = { messages: ChatMessage[]; draft?: string; busy: boolean; error?: string; cards?: Card[] };
 export type Me = { member: { id: string; name: string }; devMembers?: string[] };
 export type BotKind = "personal" | "household" | "common";
 export type BotSummary = { id: string; name: string; kind: BotKind; shared: boolean; editable: boolean; /** The Bot reads the web, so its answers need checking. */ web?: boolean; warning?: string };
@@ -140,5 +153,21 @@ export async function saveBot(form: BotForm, botId?: string): Promise<{ bot: Bot
 		return res.ok ? { bot: body } : { error: body.error ?? "Could not save the Bot." };
 	} catch {
 		return { error: "Could not reach the server." };
+	}
+}
+
+/** Taps a Card. Undefined means the server took it; otherwise the reason it did not, to show the Member. */
+export async function actOnCard(cardId: string, action: { action: "approve" | "reject" } | { action: "choose"; option: number }): Promise<string | undefined> {
+	try {
+		const res = await fetch(`/api/cards/${encodeURIComponent(cardId)}/actions`, {
+			method: "POST",
+			headers: { ...headers(), "content-type": "application/json" },
+			body: JSON.stringify(action),
+		});
+		if (res.ok) return undefined;
+		const body = await res.json().catch(() => ({}));
+		return typeof body.error === "string" ? body.error : "Could not do that. Try again.";
+	} catch {
+		return "Could not reach the server. Try again.";
 	}
 }
