@@ -13,6 +13,7 @@ import { Exposure, InvalidExposure } from "./exposure.ts";
 import { TOPICS, topicLabel } from "./memory/topics.ts";
 import type { Memory } from "./memory/memory.ts";
 import type { AskLog } from "./ask-log.ts";
+import { InvalidSubscription, type Push, validateSubscription } from "./push.ts";
 import { resolveMember } from "./identity.ts";
 import type { Member } from "./members.ts";
 import type { DailySpend } from "./spend.ts";
@@ -26,6 +27,8 @@ export type AppOptions = {
 	threads: Threads;
 	memory: Memory;
 	cards: CardStore;
+	/** Web Push subscriptions per Member and the key the browser subscribes with. */
+	push: Push;
 	exposure: Exposure;
 	/** Every Ask and what became of it, which both Members may read. */
 	askLog: AskLog;
@@ -90,7 +93,33 @@ export function createApp(options: AppOptions): Server {
 		tools: bot.tools ?? [...DEFAULT_TOOLS],
 	});
 
-	api.get("/bots", (c) => c.json({ bots: bots.listFor(c.get("member")).map(summary) }));
+	// `waiting` is how many Cards in the Bot's thread wait for the requesting Member to act (the badge on the Bot).
+	api.get("/bots", async (c) => {
+		const member = c.get("member");
+		const waiting = await cards.waitingFor(member.id);
+		return c.json({ bots: bots.listFor(member).map((bot) => ({ ...summary(bot), waiting: waiting.filter((card) => card.botId === bot.id).length })) });
+	});
+
+	api.get("/push/key", (c) => c.json({ key: options.push.publicKey }));
+
+	// A subscription is filed under the Member the server resolved, never a name in the body, so it cannot be set for the other Member.
+	const PUSH_LIMIT = bodyLimit({ maxSize: 4 * 1024, onError: (c) => c.json({ error: "Too large" }, 413) });
+	api.post("/push/subscriptions", PUSH_LIMIT, async (c) => {
+		try {
+			await options.push.subscribe(c.get("member").id, validateSubscription(await c.req.json().catch(() => undefined)));
+		} catch (error) {
+			if (error instanceof InvalidSubscription) return c.json({ error: error.message }, 400);
+			throw error;
+		}
+		return c.json({ ok: true }, 201);
+	});
+
+	api.delete("/push/subscriptions", PUSH_LIMIT, async (c) => {
+		const body = await c.req.json().catch(() => undefined);
+		if (typeof body?.endpoint !== "string") return c.json({ error: "An endpoint is required" }, 400);
+		await options.push.unsubscribe(c.get("member").id, body.endpoint);
+		return c.json({ ok: true });
+	});
 
 	api.get("/models", (c) =>
 		c.json({ models: engine.listModels(), defaultModel: engine.defaultModel, tools: BOT_TOOLS, defaultTools: DEFAULT_TOOLS }),

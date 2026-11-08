@@ -3,7 +3,7 @@
 	import BotEditor from "./BotEditor.svelte";
 	import AskLog from "./AskLog.svelte";
 	import ExposureEditor from "./ExposureEditor.svelte";
-	import { actOnCard, devMember, fetchBots, fetchMe, followThread, retryThread, sendMessage, setDevMember, type BotDefinition, type BotSummary, type Me, type Card, type ChatMessage, type ThreadView } from "./api.ts";
+	import { actOnCard, devMember, enablePush, pushEnabled, pushSupported, setAppBadge, fetchBots, fetchMe, followThread, retryThread, sendMessage, setDevMember, type BotDefinition, type BotSummary, type Me, type Card, type ChatMessage, type ThreadView } from "./api.ts";
 
 	let me = $state<Me | undefined>();
 	let refused = $state(false);
@@ -41,6 +41,10 @@
 	/** Why the last tap on a Card was refused. */
 	let cardError = $state<string | undefined>();
 	let scroller: HTMLElement | undefined = $state();
+	/** Whether this device gets push, and why turning it on failed. */
+	let pushOn = $state(true);
+	let pushError = $state<string | undefined>();
+	const waitingTotal = $derived(bots.reduce((sum, b) => sum + (b.waiting ?? 0), 0));
 
 	const bot = $derived(bots.find((b) => b.id === botId));
 
@@ -61,9 +65,34 @@
 		botId = saved.id;
 	}
 
+	// Badges come from /api/bots. A Card made or settled shows up through the open thread's stream (a changed `cards`), and a
+	// slow poll catches Cards made in other threads, so the count stays close without a second live connection.
+	async function refreshBadges() {
+		const found = await fetchBots();
+		if (found !== undefined) bots = found;
+	}
+
 	onMount(() => {
 		load();
+		pushEnabled().then((on) => (pushOn = on || !pushSupported()));
+		const timer = setInterval(refreshBadges, 20_000);
+		return () => clearInterval(timer);
 	});
+
+	$effect(() => {
+		setAppBadge(waitingTotal);
+	});
+
+	// The open thread's Cards changed (one made or tapped), so its count and the others may have too.
+	$effect(() => {
+		JSON.stringify((view.cards ?? []).map((c) => [c.id, c.status]));
+		if (me) refreshBadges();
+	});
+
+	async function turnOnPush() {
+		pushError = await enablePush();
+		if (pushError === undefined) pushOn = true;
+	}
 
 	// Switching Bots follows that Bot's thread; the server keeps each one, so nothing is lost by leaving.
 	$effect(() => {
@@ -128,6 +157,7 @@
 				</p>{/if}
 		</div>
 		<div class="flex items-center gap-2">
+			{#if waitingTotal > 0}<span class="rounded-full bg-red-600 px-2 py-0.5 text-xs font-medium text-white" role="status">{waitingTotal} waiting</span>{/if}
 			{#if !online}<span class="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">Reconnecting…</span>{/if}
 			{#if !editing}
 				<button type="button" onclick={() => (editing = "exposure")} class="rounded border border-gray-300 px-2 py-1 text-xs">Sharing</button>
@@ -165,6 +195,7 @@
 				>
 					{b.name}
 					<span class="text-xs opacity-70">{b.shared ? "shared" : b.kind}</span>
+					{#if b.waiting}<span class="ml-1 rounded-full bg-red-600 px-1.5 py-0.5 text-xs font-medium text-white" aria-label="{b.waiting} waiting for you">{b.waiting}</span>{/if}
 				</button>
 			{/each}
 			<button
@@ -176,6 +207,13 @@
 				+ New
 			</button>
 		</nav>
+		{#if !pushOn}
+			<div class="flex items-center justify-between gap-2 bg-gray-50 px-4 py-2 text-sm">
+				<span>Get a notification when a Bot needs you.</span>
+				<button type="button" onclick={turnOnPush} class="shrink-0 rounded border border-gray-300 px-2 py-1 text-xs">Enable notifications</button>
+			</div>
+			{#if pushError}<p class="px-4 py-1 text-center text-xs text-red-600" role="alert">{pushError}</p>{/if}
+		{/if}
 		{#if bot?.warning}
 			<p class="bg-amber-50 px-4 py-2 text-center text-sm text-amber-800" role="status">{bot.warning}</p>
 		{/if}

@@ -43,7 +43,7 @@ describe("the Research Bot in the Bot list", () => {
 		for (const [client, primary] of [[hamkey.ann, "primary-ann"], [hamkey.ben, "primary-ben"]] as const) {
 			const bots = await list(client);
 			expect(bots[0].id).toBe(primary);
-			expect(bots[1]).toEqual({ id: R, name: "Research Bot", kind: "common", shared: false, editable: false, web: true });
+			expect(bots[1]).toEqual({ id: R, name: "Research Bot", kind: "common", shared: false, editable: false, waiting: 0, web: true });
 			expect(bots.filter((b: { web?: boolean }) => b.web)).toHaveLength(1);
 		}
 		const edit = await hamkey.ann.request(`/api/bots/${R}`, { method: "PUT", body: JSON.stringify({ name: "Web", instructions: "Anything." }) });

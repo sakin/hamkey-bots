@@ -74,6 +74,10 @@ _Avoid_: Permission request, consent prompt
 A Card that asks for one pick from two to six short options. In a Shared thread either Member may answer; in a personal thread only its Member. The pick reaches the Bot as the next input.
 _Avoid_: Poll, quick reply
 
+**Waiting item**:
+A Card that is waiting for a Member to act: an Approval Card for its owner, a Choice Card for its addressees, a Question Card for the Member asked. Waiting items are what badges count and what push announces, once each.
+_Avoid_: Notification, pending task
+
 **Question Card**:
 The Card a direct question is shown as. It holds the question as plain text and has no buttons.
 _Avoid_: Prompt card
