@@ -7,6 +7,7 @@ import { openPiEngine } from "../src/server/chat/pi-engine.ts";
 import type { ThreadView } from "../src/server/chat/engine.ts";
 import type { Member } from "../src/server/members.ts";
 import { TAILSCALE_LOGIN_HEADER } from "../src/server/identity.ts";
+import { AskLog } from "../src/server/ask-log.ts";
 import { Bots, loadBots } from "../src/server/bots.ts";
 import { CardStore } from "../src/server/card-store.ts";
 import { Exposure } from "../src/server/exposure.ts";
@@ -52,6 +53,7 @@ export async function startHamkey(options: { devIdentity?: string; webDir?: stri
 				? undefined
 				: [{ id: "faux-small", contextWindow: options.contextWindow }, ...(options.extraModels ?? []).map((id) => ({ id }))],
 	});
+	const askLog = new AskLog(dataDir, (id) => bots.name(id));
 	const web = options.web ?? new FakeWeb();
 	let spend: DailySpend | undefined;
 	const engine = await openPiEngine({
@@ -65,7 +67,10 @@ export async function startHamkey(options: { devIdentity?: string; webDir?: stri
 		learned,
 		exposure,
 		botName: (id) => bots.name(id),
-		recordAsk: options.recordAsk,
+		recordAsk: async (entry) => {
+			await askLog.record(entry);
+			options.recordAsk?.(entry);
+		},
 		compaction: options.compaction,
 		memoryAccess: (binding) => bots.memoryAccess(binding),
 		web,
@@ -77,6 +82,7 @@ export async function startHamkey(options: { devIdentity?: string; webDir?: stri
 		memory,
 		cards,
 		exposure,
+		askLog,
 		engine,
 		bots,
 		threads: new Threads(dataDir, engine, bots),

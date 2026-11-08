@@ -6,8 +6,8 @@ import { isTopic, TOPICS } from "./memory/topics.ts";
  * scripts, extra fields or a type that is not listed. Everything is plain text; the app draws it as text, never as HTML.
  */
 
-export type CardType = "approval" | "choice";
-export const CARD_TYPES: readonly CardType[] = ["approval", "choice"];
+export type CardType = "approval" | "choice" | "question";
+export const CARD_TYPES: readonly CardType[] = ["approval", "choice", "question"];
 
 /**
  * Approval: asks the Member to share one of their own Facts under a Topic. `fact` is copied from memory by the server,
@@ -16,6 +16,11 @@ export const CARD_TYPES: readonly CardType[] = ["approval", "choice"];
 export type ApprovalFields = { fact_id: string; fact: string; topic: string };
 /** Choice: a question with 2 to 6 short options. */
 export type ChoiceFields = { question: string; options: string[] };
+/**
+ * Question: a direct question to a Member that a Bot could not get answered through an Ask (ADR 0010). It has no buttons;
+ * the Member answers by writing in the thread, and writing there settles it.
+ */
+export type QuestionFields = { question: string };
 
 export const LIMITS = {
 	factId: 100,
@@ -27,6 +32,16 @@ export const LIMITS = {
 } as const;
 
 export class InvalidCard extends Error {}
+
+/**
+ * Turns text a Bot wrote into text a Card may carry: markup characters and control characters are removed, spaces are
+ * collapsed and the length is cut. Used where the Card repeats a Bot's own words (a direct question) instead of
+ * refusing them, since the Member should still see the question.
+ */
+export function plainText(value: string, max: number): string {
+	const clean = value.replace(/[<>&\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+	return clean.length > max ? `${clean.slice(0, max - 1).trimEnd()}…` : clean;
+}
 
 /** Markup or control characters. A plain sentence has neither, so refusing them costs honest text nothing. */
 const MARKUP = /[<>]|&(#\d+|#x[0-9a-f]+|[a-z][a-z0-9]*);|[\u0000-\u0008\u000b-\u001f\u007f]/i;
@@ -50,7 +65,11 @@ function exactly(fields: unknown, allowed: readonly string[]): Record<string, un
 }
 
 /** Returns clean, trimmed fields of a Card, or throws `InvalidCard` saying what is wrong, in words a Bot can act on. */
-export function validateFields(type: unknown, fields: unknown): ApprovalFields | ChoiceFields {
+export function validateFields(type: unknown, fields: unknown): ApprovalFields | ChoiceFields | QuestionFields {
+	if (type === "question") {
+		const f = exactly(fields, ["question"]);
+		return { question: text("question", f.question, LIMITS.question) };
+	}
 	if (type === "approval") {
 		const f = exactly(fields, ["fact_id", "fact", "topic"]);
 		if (!isTopic(f.topic)) throw new InvalidCard(`topic must be one of: ${TOPICS.map((t) => t.id).join(", ")}.`);

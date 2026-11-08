@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, tick } from "svelte";
 	import BotEditor from "./BotEditor.svelte";
+	import AskLog from "./AskLog.svelte";
 	import ExposureEditor from "./ExposureEditor.svelte";
 	import { actOnCard, devMember, fetchBots, fetchMe, followThread, sendMessage, setDevMember, type BotDefinition, type BotSummary, type Me, type Card, type ChatMessage, type ThreadView } from "./api.ts";
 
@@ -36,7 +37,7 @@
 	/** Why the last message could not be sent, such as the daily spend limit. */
 	let sendError = $state<string | undefined>();
 	/** What the form is doing: nothing, creating a Bot, or editing the current one. */
-	let editing = $state<"create" | "edit" | "exposure" | undefined>();
+	let editing = $state<"create" | "edit" | "exposure" | "asks" | undefined>();
 	/** Why the last tap on a Card was refused. */
 	let cardError = $state<string | undefined>();
 	let scroller: HTMLElement | undefined = $state();
@@ -130,6 +131,7 @@
 			{#if !online}<span class="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">Reconnecting…</span>{/if}
 			{#if !editing}
 				<button type="button" onclick={() => (editing = "exposure")} class="rounded border border-gray-300 px-2 py-1 text-xs">Sharing</button>
+				<button type="button" onclick={() => (editing = "asks")} class="rounded border border-gray-300 px-2 py-1 text-xs">Ask log</button>
 			{/if}
 			{#if bot?.editable && !editing}
 				<button type="button" onclick={() => (editing = "edit")} class="rounded border border-gray-300 px-2 py-1 text-xs">Edit</button>
@@ -182,6 +184,8 @@
 		{/if}
 		{#if editing === "exposure"}
 			<ExposureEditor ondone={() => (editing = undefined)} />
+		{:else if editing === "asks"}
+			<AskLog ondone={() => (editing = undefined)} />
 		{:else if editing}
 			{#key `${editing}:${botId}`}
 				<BotEditor botId={editing === "edit" ? botId : undefined} onsaved={saved} oncancel={() => (editing = undefined)} />
@@ -215,8 +219,14 @@
 				{:else if item.card}
 				{@const card = item.card}
 				<!-- Card text is plain text from the Bot, so it is interpolated, never inserted as HTML. -->
-				<section class="max-w-[85%] space-y-2 rounded-2xl border border-gray-300 bg-white px-3.5 py-3 text-sm shadow-sm" aria-label="{card.type === 'approval' ? 'Approval' : 'Choice'} card">
-					{#if card.type === "approval"}
+				<section class="max-w-[85%] space-y-2 rounded-2xl border border-gray-300 bg-white px-3.5 py-3 text-sm shadow-sm" aria-label="{card.type === 'approval' ? 'Approval' : card.type === 'question' ? 'Question' : 'Choice'} card">
+					{#if card.type === "question"}
+						<p class="text-xs font-medium text-gray-500">{card.bot.name} needs your answer</p>
+						<p class="whitespace-pre-wrap font-medium">{card.fields.question}</p>
+						<p class="text-xs text-gray-600">
+							{card.status === "waiting" ? "Reply in this thread. The Bot could not find this out from the other Member's shared facts." : "Answered"}
+						</p>
+					{:else if card.type === "approval"}
 						<p class="text-xs font-medium text-gray-500">{card.bot.name} suggests sharing</p>
 						<p class="whitespace-pre-wrap">{card.fields.fact}</p>
 						<p class="text-xs text-gray-600">Topic: <span class="font-medium">{card.fields.topicLabel}</span>. Until you approve, it stays private.</p>

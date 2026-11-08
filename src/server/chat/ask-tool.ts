@@ -1,5 +1,8 @@
 import { Type } from "@earendil-works/pi-ai";
 import { AssistantEntry, type ConversationId, configure, defineExtension, defineTool, type TaskId, type Tx } from "@earendil-works/pi-durable";
+import { createHash } from "node:crypto";
+import type { CardStore } from "../card-store.ts";
+import { InvalidCard, LIMITS, plainText } from "../cards.ts";
 import type { Exposure } from "../exposure.ts";
 import type { Fact, Memory } from "../memory/memory.ts";
 import { isTopic, topicLabel, TOPICS } from "../memory/topics.ts";
@@ -61,6 +64,16 @@ export async function askConversation(tx: Tx, taskId: TaskId, turn: AskTurn): Pr
 	return id;
 }
 
+/**
+ * What the asking Bot is told after an Ask that gave no answer. Both ways say plainly not to guess; they differ in whether
+ * the Member can be asked right here.
+ */
+export function fallbackFor(memberName: string, asked: boolean): string {
+	return asked
+		? `Do not guess or make up an answer. A question for ${memberName} is now waiting in this thread: ask ${memberName} directly in this thread, in your own words, and wait for their reply.`
+		: `Do not guess or make up an answer. ${memberName} cannot read this thread, so you cannot ask them here: tell the Member you are talking to that you could not find out.`;
+}
+
 const text = (value: string) => ({ output: [{ type: "text" as const, text: value }] });
 
 type Block = { type: string; text?: string };
@@ -81,10 +94,7 @@ export function answerFrom(member: string, topic: string, body: string): string 
 	].join("\n");
 }
 
-/**
- * What became of an Ask. Issue #13 logs every one of these where both Members can see it; until then the server passes
- * them to `record` and nothing keeps them.
- */
+/** What became of an Ask. The server passes every one to `record`, which keeps them in the Ask log for both Members. */
 export type AskRecord = {
 	/** The id of the `ask` call, stable across a rerun after a crash, so a log can keep one row per Ask. */
 	id: string;
@@ -106,6 +116,8 @@ class AskStopped extends Error {
 		message: string,
 		readonly outcome: "refused" | "no-facts" | "failed",
 		readonly target?: string,
+		/** True when the Member should be asked directly instead (ADR 0010); false when the Bot simply used the tool wrongly. */
+		readonly fallback = false,
 	) {
 		super(message);
 	}
@@ -118,6 +130,8 @@ export type AskSetup = {
 	exposure: Exposure;
 	/** The display name of a Bot, as it is defined now. */
 	botName: (botId: string) => string | undefined;
+	/** Where a direct question goes when an Ask gets no answer. */
+	cards: CardStore;
 	/** Called once per Ask with its outcome. */
 	record?: (entry: AskRecord) => void | Promise<void>;
 };
@@ -131,9 +145,36 @@ export type AskSetup = {
  * A refusal is an error result at once; no conversation is created.
  */
 export function askExtension(resolve: AccessResolver, setup: AskSetup) {
+	/** Same call, same Card, so a rerun after a crash does not post a second question. */
+	const questionId = (taskId: string) => `question-${createHash("sha256").update(taskId).digest("hex").slice(0, 24)}`;
+
+	/**
+	 * Posts a direct question to `target` in the asking Bot's thread. It is a Card (ADR 0010), so it counts as a Bot waiting
+	 * for a Member. It is made only when the target can read that thread: a Household Bot's shared thread, or their own.
+	 * Returns whether the question is waiting for them.
+	 */
+	async function askDirectly(taskId: string, thread: string, binding: { botId: string; memberId: string | null }, target: { id: string }, question: string): Promise<boolean> {
+		if (binding.memberId !== null && binding.memberId !== target.id) return false;
+		try {
+			await setup.cards.create({
+				id: questionId(taskId),
+				type: "question",
+				thread,
+				botId: binding.botId,
+				addressees: [target.id],
+				fields: { question: plainText(question, LIMITS.question) },
+			});
+			return true;
+		} catch (error) {
+			// Too many waiting for them already: the Bot is still told not to guess.
+			if (error instanceof InvalidCard) return false;
+			throw error;
+		}
+	}
+
 	const ask = defineTool({
 		name: "ask",
-		description: `Ask another Member's Primary Bot a question about one Topic, and get its answer. It answers only from facts that Member approved for that Topic, and only if they let you ask about it; otherwise you get a refusal and should tell the Member you could not find out. It sees only your question, none of this conversation, so make the question self-contained and put nothing private in it. Members: ${setup.members.map((m) => `${m.id} (${m.name})`).join(", ")}. Topics: ${TOPICS.map((t) => `${t.id} (${t.label})`).join(", ")}.`,
+		description: `Ask another Member's Primary Bot a question about one Topic, and get its answer. It answers only from facts that Member approved for that Topic, and only if they let you ask about it; otherwise you get no answer and must not guess: you will be told whether to ask that Member directly in the thread. It sees only your question, none of this conversation, so make the question self-contained and put nothing private in it. Members: ${setup.members.map((m) => `${m.id} (${m.name})`).join(", ")}. Topics: ${TOPICS.map((t) => `${t.id} (${t.label})`).join(", ")}.`,
 		parameters: Type.Object({
 			member: Type.String({ minLength: 1, maxLength: 80, description: "The Member to ask about, by id or name." }),
 			topic: Type.String({ description: `One of: ${TOPICS.map((t) => t.id).join(", ")}.` }),
@@ -156,30 +197,32 @@ export function askExtension(resolve: AccessResolver, setup: AskSetup) {
 				if (!isTopic(args.topic)) throw new AskStopped(`Unknown Topic. Use one of: ${TOPICS.map((t) => t.id).join(", ")}.`, "refused", target.id);
 				// The gate: nothing below this line runs, and no conversation exists, unless the Member allowed this Bot for this Topic.
 				if (!(await setup.exposure.allows(target.id, args.topic, binding.botId))) {
-					throw new AskStopped(`${target.name} has not let you ask about ${topicLabel(args.topic)}. Tell the Member you could not find out.`, "refused", target.id);
+					throw new AskStopped(`${target.name} has not let you ask about ${topicLabel(args.topic)}.`, "refused", target.id, true);
 				}
 				// Only the target's personal facts that they approved under this Topic. Nothing else of theirs is read.
 				const facts = await setup.memory.listShared({ kind: "member", member: target.id }, args.topic);
-				if (facts.length === 0) throw new AskStopped(`${target.name} has not shared anything about ${topicLabel(args.topic)}. Tell the Member you could not find out.`, "no-facts", target.id);
+				if (facts.length === 0) throw new AskStopped(`${target.name} has not shared anything about ${topicLabel(args.topic)}.`, "no-facts", target.id, true);
 
 				const turn: AskTurn = { model: setup.model, target, asker: setup.botName(binding.botId) ?? "a Bot", topic: args.topic, facts };
 				const child = await api.commit((tx) => askConversation(tx, api.taskId, turn), context);
 				await api.details({ conversationId: child }, context);
 				const conversation = await api.conversation(child, context);
-				if (conversation === undefined) throw new AskStopped("The question could not be started.", "failed", target.id);
+				if (conversation === undefined) throw new AskStopped("The question could not be started.", "failed", target.id, true);
 				const submission = await conversation.submit({ type: "input", content: args.question, requestId: `ask:${api.taskId}` }, context);
 				const settled = await submission.wait(context);
-				if (settled.status !== "done" || settled.type !== "input") throw new AskStopped(`${target.name}'s Primary Bot could not answer right now. Tell the Member you could not find out.`, "failed", target.id);
+				if (settled.status !== "done" || settled.type !== "input") throw new AskStopped(`${target.name}'s Primary Bot could not answer right now.`, "failed", target.id, true);
 				const answer = await api.commit(async (tx) => (await tx.entry(AssistantEntry, settled.answer))?.model?.[0], context);
 				const reply = textOf(answer?.content).trim();
-				if (reply === "") throw new AskStopped(`${target.name}'s Primary Bot gave no answer.`, "failed", target.id);
+				if (reply === "") throw new AskStopped(`${target.name}'s Primary Bot gave no answer.`, "failed", target.id, true);
 				await setup.record?.({ ...entry, targetMemberId: target.id, outcome: "answered", answer: reply });
 				return text(answerFrom(target.name, args.topic, reply));
 			} catch (error) {
-				if (error instanceof AskStopped) {
-					await setup.record?.({ ...entry, targetMemberId: error.target ?? target?.id, outcome: error.outcome, reason: error.message });
-				}
-				throw error;
+				if (!(error instanceof AskStopped)) throw error;
+				await setup.record?.({ ...entry, targetMemberId: error.target ?? target?.id, outcome: error.outcome, reason: error.message });
+				if (!error.fallback || target === undefined) throw error;
+				// No answer: the Bot must not guess. If the target can read this thread, a direct question waits for them there.
+				const asked = await askDirectly(String(api.taskId), String(api.conversationId), binding, target, args.question);
+				throw new Error(`${error.message} ${fallbackFor(target.name, asked)}`);
 			}
 		},
 	});

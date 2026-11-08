@@ -1,12 +1,13 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { type ApprovalFields, type CardType, type ChoiceFields, InvalidCard, validateFields } from "./cards.ts";
+import { type ApprovalFields, type CardType, type ChoiceFields, InvalidCard, type QuestionFields, validateFields } from "./cards.ts";
 
 /**
  * waiting: nobody has acted. approved / rejected: an Approval Card's outcome. chosen: a Choice Card was answered.
- * A Card never leaves a settled status, so a second tap changes nothing.
+ * answered: a direct question's Member wrote in the thread. A Card never leaves a settled status, so a second tap
+ * changes nothing.
  */
-export type CardStatus = "waiting" | "approved" | "rejected" | "chosen";
+export type CardStatus = "waiting" | "approved" | "rejected" | "chosen" | "answered";
 
 export type Card = {
 	id: string;
@@ -16,7 +17,7 @@ export type Card = {
 	botId: string;
 	/** The Members who may act on it: the Fact's owner for an Approval, the thread's Members for a Choice. */
 	addressees: string[];
-	fields: ApprovalFields | ChoiceFields;
+	fields: ApprovalFields | ChoiceFields | QuestionFields;
 	status: CardStatus;
 	createdAt: string;
 	resolvedAt?: string;
@@ -132,6 +133,23 @@ export class CardStore {
 		});
 		if (settled !== undefined) this.#notify(settled);
 		return settled;
+	}
+
+	/**
+	 * Settles the direct questions waiting for `memberId` in `thread`: they have now written there, which is the answer.
+	 * Cards of other Members, other threads and other types are left alone.
+	 */
+	async answerQuestions(thread: string, memberId: string): Promise<Card[]> {
+		const answered = await this.#change((cards) => {
+			const done: Card[] = [];
+			cards.forEach((c, i) => {
+				if (c.type !== "question" || c.status !== "waiting" || c.thread !== String(thread) || !c.addressees.includes(memberId)) return;
+				done.push((cards[i] = { ...c, status: "answered", resolvedBy: memberId, resolvedAt: new Date().toISOString() }));
+			});
+			return done;
+		});
+		for (const card of answered) this.#notify(card);
+		return answered;
 	}
 
 	/** Calls `listener` after any Card is made or settled. Returns an unsubscribe function. */

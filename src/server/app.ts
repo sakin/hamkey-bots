@@ -12,6 +12,7 @@ import type { Card, CardStore } from "./card-store.ts";
 import { Exposure, InvalidExposure } from "./exposure.ts";
 import { TOPICS, topicLabel } from "./memory/topics.ts";
 import type { Memory } from "./memory/memory.ts";
+import type { AskLog } from "./ask-log.ts";
 import { resolveMember } from "./identity.ts";
 import type { Member } from "./members.ts";
 import type { DailySpend } from "./spend.ts";
@@ -26,6 +27,8 @@ export type AppOptions = {
 	memory: Memory;
 	cards: CardStore;
 	exposure: Exposure;
+	/** Every Ask and what became of it, which both Members may read. */
+	askLog: AskLog;
 	/** The daily spend limit; new messages are refused once it is reached. */
 	spend: DailySpend;
 	devIdentity?: string;
@@ -199,6 +202,30 @@ export function createApp(options: AppOptions): Server {
 		return found === undefined ? notFound(c) : c.json(await present(await engine.view(found.thread), found.bot, found.thread, c.get("member")));
 	});
 
+	/**
+	 * The Ask log, newest first. Both Members read all of it, Asks about the other Member included, because every answer was
+	 * shared with a Bot in a conversation either of them may open. The one thing held back is the name of a Bot this Member
+	 * may not use, which would show them a Bot the other keeps private.
+	 */
+	api.get("/asks", async (c) => {
+		await bots.reload();
+		const viewer = c.get("member");
+		const name = (id: string | undefined) => options.members.find((m) => m.id === id)?.name;
+		const entries = (await options.askLog.all()).map((e) => ({
+			id: e.id,
+			time: e.time,
+			bot: bots.find(viewer, e.askerBotId)?.name ?? (bots.name(e.askerBotId) === undefined ? e.askerBotName : `A private Bot of ${name(e.askerMemberId ?? undefined) ?? "a Member"}`),
+			about: name(e.targetMemberId) ?? null,
+			topic: e.topic,
+			topicLabel: topicLabel(e.topic),
+			question: e.question,
+			outcome: e.outcome,
+			answer: e.answer,
+			reason: e.reason,
+		}));
+		return c.json({ asks: entries });
+	});
+
 	// What waits for this Member to act, across all their threads. Badges and push are built on this.
 	api.get("/cards", async (c) => {
 		const member = c.get("member");
@@ -217,6 +244,8 @@ export function createApp(options: AppOptions): Server {
 		if (action !== "approve" && action !== "reject" && action !== "choose") return c.json({ error: "Unknown action" }, 400);
 		const card = await cards.get(c.req.param("card"));
 		if (card === undefined || !card.addressees.includes(member.id)) return notFound(c);
+		// A direct question has no buttons: only the Member writing in the thread settles it.
+		if (card.type === "question") return c.json({ error: "That action does not fit this Card" }, 400);
 		if ((card.type === "approval") !== (action !== "choose")) return c.json({ error: "That action does not fit this Card" }, 400);
 		if (card.status !== "waiting") return c.json({ error: "This Card has already been answered" }, 409);
 		const taken = () => c.json({ error: "This Card has already been answered" }, 409);
@@ -270,6 +299,8 @@ export function createApp(options: AppOptions): Server {
 			// The Bot may have been edited since this thread last ran; its next turn uses the current definition.
 			await engine.configure(found.thread, specFor(found.bot, found.memberId));
 			await engine.send(found.thread, text, requestId, { id: member.id, name: member.name }, found.memberId === undefined);
+			// Writing in the thread is the answer to a Bot's direct question to this Member.
+			await cards.answerQuestions(String(found.thread), member.id);
 			return c.json({ ok: true }, 202);
 		},
 	);
