@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { Bots, loadBots } from "./bots.ts";
+import { CardStore } from "./card-store.ts";
 import { createApp, listenLocal } from "./app.ts";
 import { openOpenRouterEngine } from "./chat/openrouter.ts";
 import { loadConfig } from "./config.ts";
@@ -19,6 +20,8 @@ if (!process.env.BRAVE_SEARCH_API_KEY) console.warn("BRAVE_SEARCH_API_KEY is not
 await mkdir(config.dataDir, { recursive: true });
 const members = await loadMembers(config.dataDir);
 
+const memory = new FileMemory(config.dataDir);
+const cards = new CardStore(config.dataDir);
 const bots = new Bots(await loadBots(config.dataDir, members), members, config.dataDir);
 
 // The limit reads the engine's totals and the engine asks the limit before each request, so one is bound late.
@@ -27,7 +30,8 @@ const engine = await openOpenRouterEngine({
 	gate: () => spend!.refusal(),
 	members,
 	web: productionWeb(),
-	memory: new FileMemory(config.dataDir),
+	memory,
+	cards,
 	learned: new LearnedNotes(config.dataDir),
 	memoryAccess: (binding) => bots.memoryAccess(binding),
 	storagePath: join(config.dataDir, "hamkey.sqlite"),
@@ -42,6 +46,8 @@ spend = new DailySpend({ dataDir: config.dataDir, limitUsd: config.dailyLimitUsd
 const server = createApp({
 	members,
 	spend,
+	memory,
+	cards,
 	engine,
 	bots,
 	threads: new Threads(config.dataDir, engine, bots),

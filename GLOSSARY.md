@@ -60,11 +60,29 @@ _Avoid_: Web tool (those belong to the Research Bot alone)
 Text from the web, and anything a Bot builds from it. It is shown to Bots wrapped and labelled, and to Members with a "from the web" note, because a page can try to give orders.
 _Avoid_: Unsafe, tainted
 
+### Cards
+
+**Card**:
+A structured prompt that a Bot posts in a thread and a Member answers with a tap. Cards come from a fixed catalog the server validates, hold plain text only, and are answered by a tap the server checks, never by anything a Bot says.
+_Avoid_: Widget, form, button message
+
+**Approval Card**:
+A Card that asks a Member to share one of their own Facts under a Topic. Approving shares it; rejecting, or never answering, leaves it private.
+_Avoid_: Permission request, consent prompt
+
+**Choice Card**:
+A Card that asks for one pick from two to six short options. In a Shared thread either Member may answer; in a personal thread only its Member. The pick reaches the Bot as the next input.
+_Avoid_: Poll, quick reply
+
 ### Memory
 
 **Fact**:
 One thing a Bot has been told to remember, kept outside any thread so it outlives compaction.
 _Avoid_: Note, entry
+
+**Shared fact**:
+A Fact its owner approved for sharing under a Topic. Every Fact is private when saved and becomes shared only through an Approval Card. Only a Member's own personal Facts can be shared.
+_Avoid_: Public fact, approved fact
 
 **Memory scope**:
 Where a Fact lives: the household, one Member, or one Bot (for a Common Bot, one Bot for one Member). A Bot's reach is set by its kind, never by what the model asks for.

@@ -47,6 +47,26 @@ export class FileMemory implements Memory {
 		return removed;
 	}
 
+	async setTopic(scopes: readonly Scope[], factId: string, topic: string | undefined): Promise<boolean> {
+		let found = false;
+		for (const scope of scopes) {
+			await this.#update(scope, (facts) =>
+				facts.map((f) => {
+					if (f.id !== factId) return f;
+					found = true;
+					if (f.topic === topic) return f;
+					const { topic: _old, ...rest } = f;
+					return topic === undefined ? rest : { ...rest, topic };
+				}),
+			);
+		}
+		return found;
+	}
+
+	async listShared(scope: Scope, topic: string): Promise<Fact[]> {
+		return (await this.#all([scope])).filter((f) => f.topic === topic);
+	}
+
 	async #all(scopes: readonly Scope[]): Promise<Fact[]> {
 		await this.#writes;
 		const lists = await Promise.all(scopes.map((s) => this.#read(s)));

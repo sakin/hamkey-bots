@@ -13,7 +13,11 @@ export type Scope =
 	| { kind: "member"; member: string }
 	| { kind: "bot"; bot: string; member?: string };
 
-export type Fact = { id: string; scope: Scope; text: string; savedAt: string };
+/**
+ * `topic` is set only when a Member approved sharing the Fact under that Topic (through an Approval Card). A Fact
+ * without one is private to its scope, which is how every Fact starts.
+ */
+export type Fact = { id: string; scope: Scope; text: string; savedAt: string; topic?: string };
 
 export interface Memory {
 	/** Every fact in the scopes, newest first, for putting in front of a Bot. At most `limit` facts when given. */
@@ -24,6 +28,13 @@ export interface Memory {
 	search(scopes: readonly Scope[], query: string): Promise<Fact[]>;
 	/** Removes one fact, only if it is in one of the scopes. Returns whether anything was removed. */
 	forget(scopes: readonly Scope[], factId: string): Promise<boolean>;
+	/**
+	 * Shares one fact under a Topic, or makes it private again with `undefined`. Works only inside the scopes it is given.
+	 * Returns whether the fact was found. Only the server calls this, after a Member's tap; no tool offers it to a Bot.
+	 */
+	setTopic(scopes: readonly Scope[], factId: string, topic: string | undefined): Promise<boolean>;
+	/** The facts in one scope that were shared under a Topic, newest first. This is what an Ask may use. */
+	listShared(scope: Scope, topic: string): Promise<Fact[]>;
 }
 
 export function scopeKey(scope: Scope): string {

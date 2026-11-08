@@ -17,7 +17,7 @@ export type Bot = {
 	instructions: string;
 	/** An OpenRouter model id. Absent means the server's default model. */
 	model?: string;
-	/** Names of the tools this Bot may use. Absent means every memory tool. */
+	/** Names of the tools this Bot may use. Absent means the default tools. */
 	tools?: string[];
 };
 
