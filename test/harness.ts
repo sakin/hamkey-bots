@@ -14,7 +14,7 @@ import { Exposure } from "../src/server/exposure.ts";
 import type { AskRecord } from "../src/server/chat/ask-tool.ts";
 import { LearnedNotes } from "../src/server/memory/learned-notes.ts";
 import { FileMemory } from "../src/server/memory/file-memory.ts";
-import type { CompactionSettings } from "../src/server/chat/pi-engine.ts";
+import type { CompactionSettings, PiEngineOptions } from "../src/server/chat/pi-engine.ts";
 import { DailySpend } from "../src/server/spend.ts";
 import { seedBots } from "../src/server/seed.ts";
 import { Threads } from "../src/server/threads.ts";
@@ -27,18 +27,22 @@ export const ben: Member = { id: "ben", name: "Ben", tailscaleLogin: "ben@exampl
 
 export type Hamkey = Awaited<ReturnType<typeof startHamkey>>;
 
+/** A fresh data folder with both Members and the example Bots: what an Operator's folder looks like on day one. */
+export async function newDataDir() {
+	const dataDir = await mkdtemp(join(tmpdir(), "hamkey-test-"));
+	await writeFile(join(dataDir, "members.json"), JSON.stringify([ann, ben]));
+	// The example Bots in the repository are fixtures: what a Member-made `bots` folder looks like.
+	await cp(new URL("../examples/bots", import.meta.url), join(dataDir, "bots"), { recursive: true });
+	return dataDir;
+}
+
 /**
  * A real Hamkey server on a random localhost port with temporary storage. Only the model is replaced, by Pi's faux
  * provider, so tests drive the same HTTP and streaming API a Member's phone does.
  */
-export async function startHamkey(options: { devIdentity?: string; webDir?: string; dataDir?: string; extraBots?: object[]; extraModels?: string[]; contextWindow?: number; compaction?: CompactionSettings; /** US dollars each model response costs; free by default. */ pricePerResponse?: number; /** The daily spend limit; none by default. */ dailyLimitUsd?: number; /** The web the Research Bot uses; an empty fake by default. */ web?: WebAccess; /** Told what became of every Ask. */ recordAsk?: (entry: AskRecord) => void } = {}) {
+export async function startHamkey(options: { devIdentity?: string; webDir?: string; dataDir?: string; extraBots?: object[]; extraModels?: string[]; contextWindow?: number; compaction?: CompactionSettings; /** US dollars each model response costs; free by default. */ pricePerResponse?: number; /** The daily spend limit; none by default. */ dailyLimitUsd?: number; /** The web the Research Bot uses; an empty fake by default. */ web?: WebAccess; /** Told what became of every Ask. */ recordAsk?: (entry: AskRecord) => void; /** Extra extensions, and the names of their tools that every Bot is then given; for crash tests. */ extensions?: PiEngineOptions["extensions"]; extraTools?: string[]; /** Crashes in a row before a task is parked. */ restartLimit?: number } = {}) {
 	// Passing a `dataDir` from an earlier run, stopped with `keepData`, is a server restart.
-	const dataDir = options.dataDir ?? (await mkdtemp(join(tmpdir(), "hamkey-test-")));
-	if (options.dataDir === undefined) {
-		await writeFile(join(dataDir, "members.json"), JSON.stringify([ann, ben]));
-		// The example Bots in the repository are fixtures: what a Member-made `bots` folder looks like.
-		await cp(new URL("../examples/bots", import.meta.url), join(dataDir, "bots"), { recursive: true });
-	}
+	const dataDir = options.dataDir ?? (await newDataDir());
 	// Seeded Bots, such as the meal planner, arrive the way they do in a real data folder. Safe on a restart.
 	await seedBots(dataDir);
 	for (const bot of options.extraBots ?? []) {
@@ -75,7 +79,12 @@ export async function startHamkey(options: { devIdentity?: string; webDir?: stri
 			options.recordAsk?.(entry);
 		},
 		compaction: options.compaction,
-		memoryAccess: (binding) => bots.memoryAccess(binding),
+		memoryAccess: (binding) => {
+			const access = bots.memoryAccess(binding);
+			return access && options.extraTools ? { ...access, tools: [...access.tools, ...options.extraTools] } : access;
+		},
+		extensions: options.extensions,
+		restartLimit: options.restartLimit,
 		web,
 	});
 	spend = new DailySpend({ dataDir, limitUsd: options.dailyLimitUsd ?? Infinity, total: () => engine.totalSpend() });
@@ -151,6 +160,7 @@ export async function startHamkey(options: { devIdentity?: string; webDir?: stri
 
 	return {
 		dataDir,
+		engine,
 		memory,
 		cards,
 		learned,

@@ -15,7 +15,7 @@ export type Card = {
 	/** Name of the Member who tapped. */
 	resolvedBy?: string;
 };
-export type ThreadView = { messages: ChatMessage[]; draft?: string; busy: boolean; error?: string; cards?: Card[] };
+export type ThreadView = { messages: ChatMessage[]; draft?: string; busy: boolean; error?: string; stuck?: boolean; cards?: Card[] };
 export type Me = { member: { id: string; name: string }; devMembers?: string[] };
 export type BotKind = "personal" | "household" | "common";
 export type BotSummary = { id: string; name: string; kind: BotKind; shared: boolean; editable: boolean; /** The Bot reads the web, so its answers need checking. */ web?: boolean; warning?: string };
@@ -159,6 +159,18 @@ export async function saveBot(form: BotForm, botId?: string): Promise<{ bot: Bot
 }
 
 /** Taps a Card. Undefined means the server took it; otherwise the reason it did not, to show the Member. */
+/** Runs a stuck thread's work again. Undefined means it was accepted; otherwise the reason it was not. */
+export async function retryThread(botId: string): Promise<string | undefined> {
+	try {
+		const res = await fetch(`/api/bots/${encodeURIComponent(botId)}/retry`, { method: "POST", headers: headers() });
+		if (res.ok) return undefined;
+		const body = await res.json().catch(() => ({}));
+		return typeof body.error === "string" ? body.error : "Could not retry. Try again.";
+	} catch {
+		return "Could not reach the server. Try again.";
+	}
+}
+
 export async function actOnCard(cardId: string, action: { action: "approve" | "reject" } | { action: "choose"; option: number }): Promise<string | undefined> {
 	try {
 		const res = await fetch(`/api/cards/${encodeURIComponent(cardId)}/actions`, {

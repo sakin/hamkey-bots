@@ -49,6 +49,7 @@ export function webExtension(web: WebAccess, resolve: AccessResolver) {
 		name: "web_search",
 		description: "Search the web. Returns numbered results with address, title and snippet. You can then open results with web_open.",
 		parameters: Type.Object({ query: Type.String({ minLength: 1, maxLength: 300, description: "What to search for." }) }),
+		replay: "safe", // a repeat search changes nothing but the set of remembered links, which ignores duplicates
 		async execute(args, api, context) {
 			await guard(api, "web_search", context);
 			const results = await web.search(args.query).catch(failure);
@@ -68,6 +69,7 @@ export function webExtension(web: WebAccess, resolve: AccessResolver) {
 		name: "web_open",
 		description: "Open a page from your own search results and read its text. Only addresses returned by web_search in this conversation can be opened.",
 		parameters: Type.Object({ url: Type.String({ minLength: 1, maxLength: 2000, description: "An address exactly as web_search returned it." }) }),
+		replay: "safe", // only reads a page
 		async execute(args, api, context) {
 			await guard(api, "web_open", context);
 			const searched = await api.snapshot(SearchedDoc, api.conversationId, context);

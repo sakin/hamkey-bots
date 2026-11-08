@@ -40,6 +40,8 @@ export function memoryExtension(memory: Memory, learned: LearnedNotes, resolve: 
 		return binding === undefined || binding.botId === "" ? undefined : resolve(binding);
 	}
 
+	// `memory_save` is left unmarked on purpose: every run adds a Fact with a new id, so a rerun would save it twice. After
+	// a crash the model is told the call was interrupted and can check with `memory_search`.
 	const save = defineTool({
 		name: "memory_save",
 		description: "Remember a fact for later conversations. Use it when the Member asks you to remember something.",
@@ -57,6 +59,7 @@ export function memoryExtension(memory: Memory, learned: LearnedNotes, resolve: 
 		name: "memory_search",
 		description: "Search what you remember. Give a few words that the fact would contain.",
 		parameters: Type.Object({ query: Type.String({ description: "Words to look for." }) }),
+		replay: "safe", // only reads
 		async execute(args, api, context) {
 			const access = await accessOf(api, api.conversationId, context);
 			if (access === undefined) throw new Error("Memory is not available here.");
@@ -69,6 +72,7 @@ export function memoryExtension(memory: Memory, learned: LearnedNotes, resolve: 
 		name: "memory_forget",
 		description: "Forget one fact, by the id shown in square brackets by memory_search or in what you remember.",
 		parameters: Type.Object({ id: Type.String({ minLength: 1 }) }),
+		replay: "safe", // forgetting the same id twice ends in the same state
 		async execute(args, api, context) {
 			const access = await accessOf(api, api.conversationId, context);
 			if (access === undefined) throw new Error("Memory is not available here.");
@@ -81,6 +85,7 @@ export function memoryExtension(memory: Memory, learned: LearnedNotes, resolve: 
 		name: "learned_update",
 		description: `Rewrite your own notes about how to work better with this household: habits, preferences about how you answer. Send the whole new notes, at most ${LEARNED_CAP} characters. This replaces the old notes. Do not put private facts about a Member here; use memory_save for those.`,
 		parameters: Type.Object({ notes: Type.String() }),
+		replay: "safe", // writes the same whole notes again
 		async execute(args, api, context) {
 			const binding = await api.snapshot(BindingDoc, api.conversationId, context);
 			if (binding === undefined || binding.botId === "" || resolve(binding)?.notes !== true) throw new Error("Notes are not available here.");
