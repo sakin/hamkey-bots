@@ -43,7 +43,7 @@ export async function newDataDir() {
  * A real Hamkey server on a random localhost port with temporary storage. Only the model is replaced, by Pi's faux
  * provider, so tests drive the same HTTP and streaming API a Member's phone does.
  */
-export async function startHamkey(options: { devIdentity?: string; webDir?: string; dataDir?: string; extraBots?: object[]; extraModels?: string[]; contextWindow?: number; compaction?: CompactionSettings; /** US dollars each model response costs; free by default. */ pricePerResponse?: number; /** The daily spend limit; none by default. */ dailyLimitUsd?: number; /** The web the Research Bot uses; an empty fake by default. */ web?: WebAccess; /** Told what became of every Ask. */ recordAsk?: (entry: AskRecord) => void; /** Extra extensions, and the names of their tools that every Bot is then given; for crash tests. */ extensions?: PiEngineOptions["extensions"]; extraTools?: string[]; /** Crashes in a row before a task is parked. */ restartLimit?: number; /** Where pushes go; a recording fake by default (`hamkey.push`). */ push?: PushSender } = {}) {
+export async function startHamkey(options: { devIdentity?: string; webDir?: string; dataDir?: string; extraBots?: object[]; extraModels?: string[]; contextWindow?: number; compaction?: CompactionSettings; /** US dollars each model response costs; free by default. */ pricePerResponse?: number; /** The daily spend limit; none by default. */ dailyLimitUsd?: number; /** The web the Research Bot uses; an empty fake by default. */ web?: WebAccess; /** Told what became of every Ask. */ recordAsk?: (entry: AskRecord) => void; /** Extra extensions, and the names of their tools that every Bot is then given; for crash tests. */ extensions?: PiEngineOptions["extensions"]; extraTools?: string[]; /** Crashes in a row before a task is parked. */ restartLimit?: number; /** Where pushes go; a recording fake by default (`hamkey.push`). */ push?: PushSender; /** The model's first responses, queued before the engine starts, for a restart that resumes work at once. */ responses?: unknown[] } = {}) {
 	// Passing a `dataDir` from an earlier run, stopped with `keepData`, is a server restart.
 	const dataDir = options.dataDir ?? (await newDataDir());
 	// Seeded Bots, such as the meal planner, arrive the way they do in a real data folder. Safe on a restart.
@@ -63,6 +63,7 @@ export async function startHamkey(options: { devIdentity?: string; webDir?: stri
 				? undefined
 				: [{ id: "faux-small", contextWindow: options.contextWindow }, ...(options.extraModels ?? []).map((id) => ({ id }))],
 	});
+	if (options.responses !== undefined) faux.setResponses(options.responses as never);
 	const askLog = new AskLog(dataDir, (id) => bots.name(id));
 	const web = options.web ?? new FakeWeb();
 	const sender = options.push ?? new FakePush();

@@ -33,6 +33,7 @@
     "build": "vite build",
     "start": "NODE_ENV=production tsx --env-file-if-exists=.env.local src/server/main.ts",
     "typecheck": "tsc && svelte-check --tsconfig ./tsconfig.web.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:smoke": "tsx test/smoke/smoke.ts"
   }
 }
