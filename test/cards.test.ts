@@ -15,7 +15,7 @@ const annScope: Scope = { kind: "member", member: "ann" };
 const benScope: Scope = { kind: "member", member: "ben" };
 const household: Scope = { kind: "household" };
 type Client = Hamkey["ann"];
-type View = { messages: { role: string; text: string }[]; busy: boolean; cards: CardView[] };
+type View = { messages: { role: string; text: string; at?: number }[]; busy: boolean; cards: CardView[] };
 type CardView = { id: string; type: string; status: string; bot: { id: string; name: string }; fields: Record<string, unknown>; choice?: number; resolvedBy?: string };
 
 const view = async (who: Client, bot = who.primary): Promise<View> => (await who.get(`/api/bots/${bot}`)).json();
@@ -293,6 +293,23 @@ describe("Choice Cards", () => {
 		expect(after.messages.some((m) => m.role === "user" && m.text.includes("chose"))).toBe(false);
 		expect(await waiting(hamkey.ann)).toEqual([]);
 		expect((await tap(hamkey.ann, card!.id, { action: "choose", option: 1 })).status).toBe(409);
+	});
+
+	it("gives each message and Card a time, so a reply to a tapped Card sorts after the Card", async () => {
+		hamkey = await startHamkey();
+		const { view: posted } = await say(hamkey, hamkey.ann, "Pasta or rice?", [call("ask_choice", { question: "Pasta or rice?", options: ["Pasta", "Rice"] })]);
+		const [card] = posted.cards as (CardView & { createdAt: string })[];
+		const h = hamkey;
+		await new Promise((r) => setTimeout(r, 5));
+		await reply(h, h.ann, "primary-ann", "Rice it is.", () => tap(h.ann, card!.id, { action: "choose", option: 1 }));
+		const after = (await view(h.ann)) as View & { cards: (CardView & { createdAt: string })[] };
+		const times = after.messages.map((m) => m.at);
+		expect(times.every((t) => typeof t === "number")).toBe(true);
+		const cardAt = Date.parse(after.cards[0]!.createdAt);
+		const ask = after.messages.find((m) => m.text === "Pasta or rice?")!;
+		const answer = after.messages.find((m) => m.text === "Rice it is.")!;
+		expect(ask.at!).toBeLessThanOrEqual(cardAt);
+		expect(cardAt).toBeLessThan(answer.at!);
 	});
 
 	it("lets either Member tap a Choice Card in a shared thread, once", async () => {
