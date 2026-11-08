@@ -2,8 +2,9 @@ import type { Bot } from "../bots.ts";
 import { RESEARCH_BOT_ID, WEB_TOOLS } from "../research-bot.ts";
 import type { Scope } from "./memory.ts";
 
-export const BOT_TOOLS = ["memory_save", "memory_search", "memory_forget", "learned_update", "research", "suggest_sharing", "ask_choice"] as const;
-/** What a Bot has when it names no tools: memory only. Research is something a Member ticks (ADR 0004). */
+export const BOT_TOOLS = ["memory_save", "memory_search", "memory_forget", "learned_update", "research", "suggest_sharing", "ask_choice", "ask"] as const;
+/** What a Bot has when it names no tools: memory only. Research (ADR 0004) and Ask (ADR 0003) are
+ * something a Member ticks: each reaches beyond the Bot's own thread, and each costs a model run. */
 export const DEFAULT_TOOLS: readonly string[] = ["memory_save", "memory_search", "memory_forget", "learned_update", "suggest_sharing", "ask_choice"];
 export type BotToolName = (typeof BOT_TOOLS)[number];
 

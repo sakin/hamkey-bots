@@ -9,6 +9,8 @@ import type { Member } from "../src/server/members.ts";
 import { TAILSCALE_LOGIN_HEADER } from "../src/server/identity.ts";
 import { Bots, loadBots } from "../src/server/bots.ts";
 import { CardStore } from "../src/server/card-store.ts";
+import { Exposure } from "../src/server/exposure.ts";
+import type { AskRecord } from "../src/server/chat/ask-tool.ts";
 import { LearnedNotes } from "../src/server/memory/learned-notes.ts";
 import { FileMemory } from "../src/server/memory/file-memory.ts";
 import type { CompactionSettings } from "../src/server/chat/pi-engine.ts";
@@ -27,7 +29,7 @@ export type Hamkey = Awaited<ReturnType<typeof startHamkey>>;
  * A real Hamkey server on a random localhost port with temporary storage. Only the model is replaced, by Pi's faux
  * provider, so tests drive the same HTTP and streaming API a Member's phone does.
  */
-export async function startHamkey(options: { devIdentity?: string; webDir?: string; dataDir?: string; extraBots?: object[]; extraModels?: string[]; contextWindow?: number; compaction?: CompactionSettings; /** US dollars each model response costs; free by default. */ pricePerResponse?: number; /** The daily spend limit; none by default. */ dailyLimitUsd?: number; /** The web the Research Bot uses; an empty fake by default. */ web?: WebAccess } = {}) {
+export async function startHamkey(options: { devIdentity?: string; webDir?: string; dataDir?: string; extraBots?: object[]; extraModels?: string[]; contextWindow?: number; compaction?: CompactionSettings; /** US dollars each model response costs; free by default. */ pricePerResponse?: number; /** The daily spend limit; none by default. */ dailyLimitUsd?: number; /** The web the Research Bot uses; an empty fake by default. */ web?: WebAccess; /** Told what became of every Ask. */ recordAsk?: (entry: AskRecord) => void } = {}) {
 	// Passing a `dataDir` from an earlier run, stopped with `keepData`, is a server restart.
 	const dataDir = options.dataDir ?? (await mkdtemp(join(tmpdir(), "hamkey-test-")));
 	if (options.dataDir === undefined) {
@@ -41,6 +43,7 @@ export async function startHamkey(options: { devIdentity?: string; webDir?: stri
 	const memory = new FileMemory(dataDir);
 	const cards = new CardStore(dataDir);
 	const learned = new LearnedNotes(dataDir);
+	const exposure = new Exposure(dataDir);
 	const bots = new Bots(await loadBots(dataDir, [ann, ben]), [ann, ben], dataDir);
 	const faux = fauxProvider({
 		tokensPerSecond: 400,
@@ -60,6 +63,9 @@ export async function startHamkey(options: { devIdentity?: string; webDir?: stri
 		memory,
 		cards,
 		learned,
+		exposure,
+		botName: (id) => bots.name(id),
+		recordAsk: options.recordAsk,
 		compaction: options.compaction,
 		memoryAccess: (binding) => bots.memoryAccess(binding),
 		web,
@@ -70,6 +76,7 @@ export async function startHamkey(options: { devIdentity?: string; webDir?: stri
 		spend,
 		memory,
 		cards,
+		exposure,
 		engine,
 		bots,
 		threads: new Threads(dataDir, engine, bots),

@@ -85,7 +85,7 @@ describe("memory", () => {
 		const all = await say(hamkey, hamkey.ann, "hi");
 		expect(all.prompts[0]).toContain("Tools you have: memory_save, memory_search, memory_forget, learned_update, suggest_sharing, ask_choice.");
 		// Research is not on by default, so the Bot is told it lacks it and nothing else.
-		expect(all.prompts[0]).toContain("Tools you do not have: research.");
+		expect(all.prompts[0]).toContain("Tools you do not have: research, ask.");
 	});
 
 	it("refuses a tool the Bot lost since its thread was made, through the second check", async () => {

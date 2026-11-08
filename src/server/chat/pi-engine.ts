@@ -13,6 +13,8 @@ import { researchExtension } from "./research-tool.ts";
 import { webExtension } from "./web-tools.ts";
 import { cardsExtension } from "./card-tools.ts";
 import type { CardStore } from "../card-store.ts";
+import type { Exposure } from "../exposure.ts";
+import { type AskRecord, askExtension } from "./ask-tool.ts";
 
 /** The entry kind of a message sent through Hamkey. It records who wrote it; the model sees the input's `content`. */
 const MESSAGE_KIND = "hamkey.message";
@@ -36,6 +38,12 @@ export type PiEngineOptions = {
 	/** Where Cards the Bots post are kept. */
 	cards: CardStore;
 	learned: LearnedNotes;
+	/** Which Bots each Member lets Ask about which Topics; read on every Ask. */
+	exposure: Exposure;
+	/** A Bot's name as it is defined now, for the Ask conversation's instructions. */
+	botName: (botId: string) => string | undefined;
+	/** Told what became of every Ask (issue #13 keeps these). */
+	recordAsk?: (entry: AskRecord) => void | Promise<void>;
 	/** What a Bot may do with memory, as the Bot is defined now. */
 	memoryAccess: AccessResolver;
 	/** The web, for the Research Bot's tools alone (ADR 0004). */
@@ -91,6 +99,16 @@ export async function openPiEngine(options: PiEngineOptions): Promise<ChatEngine
 		tools: webTools.tools ?? [],
 	});
 	registry.install(researchTool);
+	// Never in the list of extensions an Ask conversation runs with: that conversation has none (see `askConversation`).
+	const askTool = askExtension(options.memoryAccess, {
+		model: { provider: options.model.provider, modelId: options.model.modelId },
+		members: options.members,
+		memory: options.memory,
+		exposure: options.exposure,
+		botName: options.botName,
+		record: options.recordAsk,
+	});
+	registry.install(askTool);
 	const cardTools = cardsExtension(options.memory, options.cards, options.members, options.memoryAccess);
 	registry.install(cardTools);
 	registry.install(sharedThreadExtension(options.members));
@@ -127,7 +145,7 @@ export async function openPiEngine(options: PiEngineOptions): Promise<ChatEngine
 		return {
 			model: { provider: options.model.provider, modelId: spec.model ?? options.model.modelId },
 			instructions: spec.instructions,
-			tools: [...(memoryTools.tools ?? []), ...(webTools.tools ?? []), ...(researchTool.tools ?? []), ...(cardTools.tools ?? [])].filter((t) => offered.includes(t.name)),
+			tools: [...(memoryTools.tools ?? []), ...(webTools.tools ?? []), ...(researchTool.tools ?? []), ...(askTool.tools ?? []), ...(cardTools.tools ?? [])].filter((t) => offered.includes(t.name)),
 		};
 	}
 

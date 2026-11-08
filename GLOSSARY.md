@@ -95,15 +95,19 @@ _Avoid_: Self-edit, prompt
 ### Privacy
 
 **Ask**:
-A live request from one Bot to a Primary Bot for information about that Bot's Member.
+A live request from one Bot to a Primary Bot for information about that Bot's Member, made with the `ask` tool. The server refuses it before any model runs unless that Member's Exposure List lets this Bot Ask about the Topic. A Bot cannot Ask about the Member it is talking to.
 _Avoid_: Query, bot chat, cross-bot request
+
+**Ask conversation**:
+The separate conversation in which a Primary Bot answers one Ask. It has no tools and no memory, and holds only the question, the asking Bot's name, the Topic and the facts the Member approved for that Topic. It never touches the Member's main thread.
+_Avoid_: Ask thread, sub-chat
 
 **Topic**:
 A named category of a Member's information, such as evening availability.
 _Avoid_: Subject, tag
 
 **Exposure List**:
-A Member's own record of which Topics may be shared, with which Bots, and in how much detail.
+A Member's own record, for each Topic, of which Bots may Ask about it. Nothing is exposed until the Member ticks it, and a change applies to the very next Ask. Only Household and Common Bots can be listed.
 _Avoid_: Rules file, permissions
 
 ### Running Hamkey
