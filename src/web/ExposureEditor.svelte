@@ -58,7 +58,10 @@
 				<legend class="font-medium">{topic.label}</legend>
 				{#each view.bots as bot (bot.id)}
 					<label class="mt-1 flex items-center gap-2 font-normal">
-						<input type="checkbox" checked={(chosen[topic.id] ?? []).includes(bot.id)} onchange={(e) => toggle(topic.id, bot.id, e.currentTarget.checked)} />
+						<input
+								type="checkbox"
+								aria-label="Let {bot.name} ask about {topic.label}"
+								checked={(chosen[topic.id] ?? []).includes(bot.id)} onchange={(e) => toggle(topic.id, bot.id, e.currentTarget.checked)} />
 						{bot.name}
 						<span class="text-xs text-gray-500">{bot.kind === "household" ? "household" : "common"}</span>
 					</label>

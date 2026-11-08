@@ -6,7 +6,7 @@
 export type ThreadId = string;
 
 /** `author` is the id of the Member who wrote a user message. Threads from before authors were recorded have none. */
-export type ChatMessage = { id: string; role: "user" | "assistant"; text: string; author?: string };
+export type ChatMessage = { id: string; role: "user" | "assistant"; text: string; author?: string; /** When the message was written, in ms since the epoch, so clients can interleave Cards in time order. */ at?: number };
 
 /** The Member behind a message. */
 export type Author = { id: string; name: string };
