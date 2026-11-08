@@ -52,6 +52,10 @@ _Avoid_: Shared bot, global bot
 The built-in Common Bot that does web research for Members and for other Bots. It is the only Bot with web access, and it has no personal memory. It opens only links from its own search results, and what it reads and says is marked untrusted. Members cannot edit it.
 _Avoid_: Web bot, search bot
 
+**Research tool**:
+A tool a Member can tick on a Bot so that it can look things up. The Bot sends the Research Bot a research request and gets back text marked untrusted, without web access of its own. Each research request runs in a fresh conversation that sees only the request, never the calling Bot's thread, tools or instructions.
+_Avoid_: Web tool (those belong to the Research Bot alone)
+
 **Untrusted**:
 Text from the web, and anything a Bot builds from it. It is shown to Bots wrapped and labelled, and to Members with a "from the web" note, because a page can try to give orders.
 _Avoid_: Unsafe, tainted

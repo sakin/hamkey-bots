@@ -35,7 +35,7 @@
 				tools = [...bot.tools];
 			}
 		} else {
-			tools = [...(catalog?.tools ?? [])];
+			tools = [...(catalog?.defaultTools ?? [])];
 		}
 		failed ||= catalog === undefined;
 		loading = false;

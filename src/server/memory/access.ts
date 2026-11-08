@@ -2,7 +2,9 @@ import type { Bot } from "../bots.ts";
 import { RESEARCH_BOT_ID, WEB_TOOLS } from "../research-bot.ts";
 import type { Scope } from "./memory.ts";
 
-export const BOT_TOOLS = ["memory_save", "memory_search", "memory_forget", "learned_update"] as const;
+export const BOT_TOOLS = ["memory_save", "memory_search", "memory_forget", "learned_update", "research"] as const;
+/** What a Bot has when it names no tools: memory only. Research is something a Member ticks (ADR 0004). */
+export const DEFAULT_TOOLS: readonly string[] = ["memory_save", "memory_search", "memory_forget", "learned_update"];
 export type BotToolName = (typeof BOT_TOOLS)[number];
 
 /** What a Bot may do with memory in one conversation. Built on the server from the Bot and Member, never from the model. */
@@ -22,9 +24,11 @@ export type MemoryAccess = {
  * Member separately, so it reads only its own notes for that Member.
  */
 export function accessFor(bot: Bot, memberId: string | undefined): MemoryAccess | undefined {
-	// The Research Bot reads web pages written by strangers, so it gets the web tools and no memory (ADR 0004).
-	if (bot.id === RESEARCH_BOT_ID) return memberId === undefined ? undefined : { read: [], notes: false, tools: [...WEB_TOOLS] };
-	const tools = bot.tools ?? [...BOT_TOOLS];
+	// The Research Bot reads web pages written by strangers, so it gets the web tools and no memory, and never the
+	// research tool, so it cannot call itself or other Bots (ADR 0004). Its conversations belong to no Member when a
+	// Household Bot asked, so this does not depend on `memberId`.
+	if (bot.id === RESEARCH_BOT_ID) return { read: [], notes: false, tools: [...WEB_TOOLS] };
+	const tools = bot.tools ?? [...DEFAULT_TOOLS];
 	switch (bot.kind) {
 		case "household":
 			return {

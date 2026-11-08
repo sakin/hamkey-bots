@@ -9,6 +9,7 @@ import type { Author, ChatEngine, ChatMessage, RequestGate, ThreadId, ThreadSpec
 import { gatedProvider } from "./gated-provider.ts";
 import { sharedThreadExtension } from "./shared-thread.ts";
 import type { WebAccess } from "../web/web-access.ts";
+import { researchExtension } from "./research-tool.ts";
 import { webExtension } from "./web-tools.ts";
 
 /** The entry kind of a message sent through Hamkey. It records who wrote it; the model sees the input's `content`. */
@@ -77,6 +78,13 @@ export async function openPiEngine(options: PiEngineOptions): Promise<ChatEngine
 	registry.install(memoryTools);
 	const webTools = webExtension(options.web, options.memoryAccess);
 	registry.install(webTools);
+	// A research request's conversation runs with exactly these: web tools and the memory extension's access checks.
+	const researchTool = researchExtension(options.memoryAccess, {
+		model: { provider: options.model.provider, modelId: options.model.modelId },
+		extensions: [memoryTools, webTools],
+		tools: webTools.tools ?? [],
+	});
+	registry.install(researchTool);
 	registry.install(sharedThreadExtension(options.members));
 	// Refusals the gate gave, so a run that failed on one shows the Member its words rather than a generic error.
 	const refusals = new Set<string>();
@@ -111,7 +119,7 @@ export async function openPiEngine(options: PiEngineOptions): Promise<ChatEngine
 		return {
 			model: { provider: options.model.provider, modelId: spec.model ?? options.model.modelId },
 			instructions: spec.instructions,
-			tools: [...(memoryTools.tools ?? []), ...(webTools.tools ?? [])].filter((t) => offered.includes(t.name)),
+			tools: [...(memoryTools.tools ?? []), ...(webTools.tools ?? []), ...(researchTool.tools ?? [])].filter((t) => offered.includes(t.name)),
 		};
 	}
 
