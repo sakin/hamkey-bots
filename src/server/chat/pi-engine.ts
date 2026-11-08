@@ -53,7 +53,7 @@ export type PiEngineOptions = {
 };
 
 type Block = { type: string; text?: string };
-type Entry = { id: string; kind: string; data?: unknown; model?: readonly { role: string; content: unknown }[] };
+type Entry = { id: string; kind: string; data?: unknown; model?: readonly { role: string; content: unknown; timestamp?: number }[] };
 
 function textOf(content: unknown): string {
 	if (typeof content === "string") return content;
@@ -71,12 +71,12 @@ function project(value: { entries: readonly Entry[]; docs: Readonly<Record<strin
 		const message = entry.model?.[0];
 		if (entry.kind === MESSAGE_KIND) {
 			const data = entry.data as { author?: string; text?: string } | undefined;
-			messages.push({ id: entry.id, role: "user", text: data?.text ?? textOf(message?.content), author: data?.author });
+			messages.push({ id: entry.id, role: "user", text: data?.text ?? textOf(message?.content), author: data?.author, at: message?.timestamp });
 		} else if (entry.kind === "pi.user" && message?.role === "user") {
-			messages.push({ id: entry.id, role: "user", text: textOf(message.content) });
+			messages.push({ id: entry.id, role: "user", text: textOf(message.content), at: message.timestamp });
 		} else if (entry.kind === "pi.assistant" && message?.role === "assistant") {
 			const text = textOf(message.content);
-			if (text !== "") messages.push({ id: entry.id, role: "assistant", text });
+			if (text !== "") messages.push({ id: entry.id, role: "assistant", text, at: message.timestamp });
 		}
 	}
 	const live = value.docs["pi.live"] as
